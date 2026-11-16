@@ -461,6 +461,21 @@ FROM ML.GENERATE_TEXT(
 
 ---
 
+### 5.4 Predictive Modeling & Time-Series Machine Learning (Tab 4)
+
+Beyond generative coaching narratives, the warehouse integrates predictive exercise science and native machine learning:
+
+#### 1. Riegel's Endurance Race Target Predictor
+Using Peter Riegel's canonical fatigue model:
+$$T_2 = T_1 \times \left(\frac{D_2}{D_1}\right)^{1.06}$$
+The view `strava_data.v_race_predictions` dynamically isolates the athlete's peak aerobic benchmark performance ($D_1, T_1$) over the preceding 60 days (runs $\ge 3\text{ km}$) and projects target race times for 5K, 10K, and Half Marathon with pace and speed metrics.
+
+#### 2. BigQuery ML `ARIMA_PLUS` Mileage Forecasting
+Trains on the complete historical weekly running distance time-series (`strava_data.model_weekly_mileage_forecast`) to forecast future weekly mileage volume over an 8-week horizon with 90% confidence intervals.
+The unified analytical view `strava_data.v_weekly_mileage_forecast` merges historical actuals with future ARIMA+ projections for seamless charting in Google Looker Studio.
+
+---
+
 ## Chapter 6: CI/CD Pipeline & Serverless Orchestration
 
 ### 6.1 GitHub Actions Deployment (`.github/workflows/deploy.yml`)
@@ -607,6 +622,40 @@ The core differentiator of this dashboard is the seamless embedding of **Google 
 3. **Monthly Summary Table (Mesocycle Level):**
    * Columns: `Month`, `Distance`, `Cadence`, `Pace`, `Sessions`, `HR`, `Summary`.
    * Highlights monthly macrocycle adaptations, periodization trends, and cumulative aerobic fitness progression.
+
+---
+
+### 7.3 Tab 4: Predictive Modeling & Race Target Analytics
+
+The 4th tab of the executive Looker Studio dashboard delivers forward-looking, sports-science driven analytics powered by BigQuery ML and Riegel's endurance formula:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│ 🔮 PREDICTIVE MODELING & RACE TARGET ANALYTICS                                         │
+│ Baseline Performance: Afternoon Run (2026-10-28) | Dist: 3.01 km | Pace: 05:21/km      │
+├──────────────────────────┬──────────────────────────┬──────────────────────────────────┤
+│ 🎯 5K TARGET PROJECTION  │ 🎯 10K TARGET PROJECTION │ 🎯 HALF MARATHON PROJECTION      │
+│ • Projected Time: 27:34  │ • Projected Time: 57:29  │ • Projected Time: 02:06:50       │
+│ • Pace: 05:31/km         │ • Pace: 05:45/km         │ • Pace: 06:01/km                 │
+│ • Speed: 10.88 km/h      │ • Speed: 10.44 km/h      │ • Speed: 9.98 km/h               │
+├──────────────────────────┴──────────────────────────┴──────────────────────────────────┤
+│ 📈 BIGQUERY ML ARIMA_PLUS: 8-WEEK WEEKLY MILEAGE PROJECTION                            │
+│ • Historical Solid Bars: Actual Weekly Running Kilometers (May 2025 – Present)        │
+│ • Dashed Orange Line: Projected Forecast (~13.0 km/week sustainable volume)            │
+│ • Shaded Confidence Band: 90% Confidence Interval (Upper: ~20km, Lower: ~5km)         │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ 📋 8-WEEK FORECAST HORIZON TABLE                                                       │
+│ • Week | Horizon | Projected Dist | 90% Lower Band | 90% Upper Band | Standard Error   │
+│ • Nov 23: 13.33 km (Lower: 7.54 km | Upper: 19.12 km | SE: 3.52)                      │
+│ • Nov 30: 13.71 km (Lower: 7.35 km | Upper: 20.08 km | SE: 3.87)                      │
+│ • Dec 07: 12.47 km (Lower: 5.62 km | Upper: 19.33 km | SE: 4.17)                      │
+│ • Dec 14: 13.03 km (Lower: 5.29 km | Upper: 20.76 km | SE: 4.71)                      │
+│ • Dec 21: 13.11 km (Lower: 4.80 km | Upper: 21.43 km | SE: 5.06)                      │
+│ • Dec 28: 12.89 km (Lower: 4.05 km | Upper: 21.74 km | SE: 5.38)                      │
+│ • Jan 04: 12.99 km (Lower: 3.58 km | Upper: 22.39 km | SE: 5.73)                      │
+│ • Jan 11: 13.00 km (Lower: 3.10 km | Upper: 22.91 km | SE: 6.03)                      │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 

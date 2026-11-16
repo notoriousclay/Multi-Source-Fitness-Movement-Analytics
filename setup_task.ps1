@@ -1,4 +1,4 @@
-﻿$TaskName = "StravaFitnessSync"
+$TaskName = "StravaFitnessSync"
 $ScriptPath = "c:\Users\My PC\strava-fitness-analytics\run_sync.bat"
 $WorkingDirectory = "c:\Users\My PC\strava-fitness-analytics"
 
