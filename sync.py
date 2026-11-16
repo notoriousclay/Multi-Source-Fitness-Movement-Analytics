@@ -193,7 +193,7 @@ def get_recent_activities(access_token):
 
 # --- 3. BIGQUERY FUNCTIONS ---
 def get_existing_strava_ids():
-    query = f"SELECT Strava_ID FROM `{TABLE_ID}`"
+    query = f"SELECT DISTINCT Strava_ID FROM `{TABLE_ID}`"
     query_job = bq_client.query(query)
     return {row.Strava_ID for row in query_job.result()}
 
@@ -202,11 +202,20 @@ def upload_to_bigquery(activities_to_upload, access_token=None):
         print("⏭️ No new activities to upload.")
         return
 
+    # In-memory deduplication to ensure unique Strava IDs per batch
+    seen_ids = set()
+    unique_activities = []
+    for act in activities_to_upload:
+        act_id = act.get("id")
+        if act_id and act_id not in seen_ids:
+            seen_ids.add(act_id)
+            unique_activities.append(act)
+
     rows_to_insert = []
     split_rows_to_insert = []
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
     
-    for activity in activities_to_upload:
+    for activity in unique_activities:
         detailed_activity = None
         # Always fetch detailed activity if access_token is available to retrieve splits and full telemetry
         if access_token and activity.get("id"):
@@ -346,14 +355,17 @@ def upload_to_bigquery(activities_to_upload, access_token=None):
             splits = parse_activity_splits(activity.get("id"), date_str, detailed_activity.get("splits_metric"))
             split_rows_to_insert.extend(splits)
 
-    errors = bq_client.insert_rows_json(TABLE_ID, rows_to_insert)
+    # Pass row_ids to enforce BigQuery streaming buffer deduplication by unique Strava ID
+    row_ids = [str(r["Strava_ID"]) for r in rows_to_insert]
+    errors = bq_client.insert_rows_json(TABLE_ID, rows_to_insert, row_ids=row_ids)
     if errors:
         print(f"❌ Errors: {errors}")
     else:
         print(f"✅ Successfully loaded {len(rows_to_insert)} activities!")
 
     if split_rows_to_insert:
-        split_errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, split_rows_to_insert)
+        split_row_ids = [f"{r['Strava_ID']}_{r['Split_Num']}" for r in split_rows_to_insert]
+        split_errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, split_rows_to_insert, row_ids=split_row_ids)
         if split_errors:
             print(f"❌ Splits Errors: {split_errors}")
         else:

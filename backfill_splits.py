@@ -106,7 +106,8 @@ def backfill_splits(limit=None):
         # Flush batch to BigQuery every 50 activities to save progress
         if len(all_splits_to_insert) >= 200:
             print(f"🚀 Inserting batch of {len(all_splits_to_insert)} splits into `{SPLITS_TABLE_ID}`...", flush=True)
-            errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, all_splits_to_insert)
+            batch_row_ids = [f"{r['Strava_ID']}_{r['Split_Num']}" for r in all_splits_to_insert]
+            errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, all_splits_to_insert, row_ids=batch_row_ids)
             if errors:
                 print(f"❌ Batch insertion errors: {errors}", flush=True)
             else:
@@ -116,7 +117,8 @@ def backfill_splits(limit=None):
     # Final flush
     if all_splits_to_insert:
         print(f"🚀 Inserting remaining {len(all_splits_to_insert)} splits into `{SPLITS_TABLE_ID}`...", flush=True)
-        errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, all_splits_to_insert)
+        final_row_ids = [f"{r['Strava_ID']}_{r['Split_Num']}" for r in all_splits_to_insert]
+        errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, all_splits_to_insert, row_ids=final_row_ids)
         if errors:
             print(f"❌ Final batch insertion errors: {errors}", flush=True)
         else:
