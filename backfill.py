@@ -275,5 +275,12 @@ def backfill():
     bq_client.delete_table(TEMP_TABLE_ID, not_found_ok=True)
     print("🧹 Temporary table cleaned up.", flush=True)
 
+    print("\n🏃‍♂️ Now checking and backfilling kilometer pace splits...", flush=True)
+    try:
+        from backfill_splits import backfill_splits
+        backfill_splits()
+    except Exception as e:
+        print(f"⚠️ Notice during splits backfill: {e}", flush=True)
+
 if __name__ == "__main__":
     backfill()

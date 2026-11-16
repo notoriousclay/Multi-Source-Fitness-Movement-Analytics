@@ -83,6 +83,63 @@ def init_bigquery():
 
 bq_client, PROJECT_ID = init_bigquery()
 TABLE_ID = os.getenv("BIGQUERY_TABLE_ID", f"{PROJECT_ID}.strava_data.strava_activities")
+SPLITS_TABLE_ID = os.getenv("BIGQUERY_SPLITS_TABLE_ID", f"{PROJECT_ID}.strava_data.strava_activity_splits")
+
+def parse_activity_splits(activity_id, date_str, splits_metric):
+    """Parses Strava splits_metric into structured split records for BigQuery."""
+    if not splits_metric or not activity_id or not date_str:
+        return []
+    
+    split_rows = []
+    for split in splits_metric:
+        dist_m = float(split.get("distance") or 0.0)
+        dist_km = round(dist_m / 1000.0, 3)
+        moving_sec = int(split.get("moving_time") or 0)
+        elapsed_sec = int(split.get("elapsed_time") or 0)
+        duration_min = round(moving_sec / 60.0, 2)
+        
+        pace_str = "N/A"
+        pace_dec_min = None
+        if dist_km > 0 and moving_sec > 0:
+            pace_dec = (moving_sec / 60.0) / dist_km
+            mins = int(pace_dec)
+            secs = int(round((pace_dec - mins) * 60))
+            if secs >= 60:
+                mins += 1
+                secs = 0
+            pace_str = f"{mins:02d}:{secs:02d}/km"
+            pace_dec_min = round(pace_dec, 2)
+        
+        avg_speed_ms = float(split.get("average_speed") or 0.0)
+        avg_speed_kmh = round(avg_speed_ms * 3.6, 2) if avg_speed_ms > 0 else 0.0
+        
+        avg_gas = split.get("average_grade_adjusted_speed")
+        avg_gas_kmh = round(float(avg_gas) * 3.6, 2) if avg_gas is not None and float(avg_gas) > 0 else None
+        
+        elev_diff = split.get("elevation_difference")
+        elev_diff_m = round(float(elev_diff), 1) if elev_diff is not None else None
+        
+        avg_hr = split.get("average_heartrate")
+        avg_hr_val = round(float(avg_hr), 1) if avg_hr is not None else None
+        
+        split_row = {
+            "Strava_ID": int(activity_id),
+            "Date": str(date_str),
+            "Split_Num": int(split.get("split") or (len(split_rows) + 1)),
+            "Distance_km": dist_km,
+            "Duration_sec": moving_sec,
+            "Elapsed_Time_sec": elapsed_sec,
+            "Duration_min": duration_min,
+            "Pace": pace_str,
+            "Pace_Dec_Min": pace_dec_min,
+            "Elevation_Diff_m": elev_diff_m,
+            "Avg_HR": avg_hr_val,
+            "Avg_Speed_kmh": avg_speed_kmh,
+            "Avg_Grade_Adjusted_Speed_kmh": avg_gas_kmh,
+            "Pace_Zone": int(split.get("pace_zone")) if split.get("pace_zone") is not None else None
+        }
+        split_rows.append(split_row)
+    return split_rows
 
 # --- 2. STRAVA FUNCTIONS ---
 def get_strava_access_token():
@@ -146,16 +203,19 @@ def upload_to_bigquery(activities_to_upload, access_token=None):
         return
 
     rows_to_insert = []
+    split_rows_to_insert = []
     headers = {"Authorization": f"Bearer {access_token}"} if access_token else None
     
     for activity in activities_to_upload:
-        # Fetch detailed activity if calories missing from summary object
-        if access_token and (activity.get("calories") is None or activity.get("calories") == 0):
+        detailed_activity = None
+        # Always fetch detailed activity if access_token is available to retrieve splits and full telemetry
+        if access_token and activity.get("id"):
             try:
                 detail_url = f"https://www.strava.com/api/v3/activities/{activity.get('id')}"
-                res = requests.get(detail_url, headers=headers)
+                res = requests.get(detail_url, headers=headers, timeout=10)
                 if res.status_code == 200:
-                    activity = res.json()
+                    detailed_activity = res.json()
+                    activity.update(detailed_activity)
             except Exception as e:
                 print(f"⚠️ Warning: Could not fetch details for activity {activity.get('id')}: {e}")
 
@@ -281,11 +341,23 @@ def upload_to_bigquery(activities_to_upload, access_token=None):
         }
         rows_to_insert.append(row)
 
+        # Parse splits if available in detailed activity
+        if detailed_activity and detailed_activity.get("splits_metric") and date_str:
+            splits = parse_activity_splits(activity.get("id"), date_str, detailed_activity.get("splits_metric"))
+            split_rows_to_insert.extend(splits)
+
     errors = bq_client.insert_rows_json(TABLE_ID, rows_to_insert)
     if errors:
         print(f"❌ Errors: {errors}")
     else:
         print(f"✅ Successfully loaded {len(rows_to_insert)} activities!")
+
+    if split_rows_to_insert:
+        split_errors = bq_client.insert_rows_json(SPLITS_TABLE_ID, split_rows_to_insert)
+        if split_errors:
+            print(f"❌ Splits Errors: {split_errors}")
+        else:
+            print(f"✅ Successfully loaded {len(split_rows_to_insert)} splits into `{SPLITS_TABLE_ID}`!")
 
 # --- 4. EXECUTION ---
 def run_sync():

@@ -40,8 +40,8 @@ flowchart TD
     end
 
     subgraph STORAGE ["3. Enterprise Data Warehouse & Modeling"]
-        GCF -->|Incremental Ingestion<br/>7-Day Sliding Window| BQ[("Google BigQuery<br/>strava_data.strava_activities")]
-        BF["Full Backfill & Reconciliation<br/>(backfill.py)"] -->|Idempotent SQL MERGE| BQ
+        GCF -->|Incremental Ingestion<br/>7-Day Sliding Window| BQ[("Google BigQuery<br/>strava_data.strava_activities<br/>strava_data.strava_activity_splits")]
+        BF["Full Backfill & Reconciliation<br/>(backfill.py & backfill_splits.py)"] -->|Idempotent MERGE & Load| BQ
     end
 
     subgraph AIENGINE ["4. BigQuery Scheduled Queries & Gemini ML"]
@@ -224,7 +224,31 @@ The primary analytical warehouse table is hosted on Google Cloud BigQuery (`stra
 | `State` | `STRING` | NULLABLE | State / Province boundary |
 | `Country` | `STRING` | NULLABLE | Sovereign nation state |
 
-### 4.2 Idempotency & Deduplication Strategy
+### 4.2 Granular Pace Splits Schema (`strava_data.strava_activity_splits`)
+
+To enable high-resolution split-by-split pace analysis, pacing drift evaluation, and negative split detection, the pipeline models kilometer splits in a dedicated child table partitioned by `Date` and clustered by `Strava_ID`.
+
+| Field Name | Type | Mode | Description |
+| :--- | :--- | :--- | :--- |
+| `Strava_ID` | `INT64` | REQUIRED | Foreign Key linking to `strava_activities.Strava_ID` |
+| `Date` | `DATE` | REQUIRED | Workout execution date (Partitioning column) |
+| `Split_Num` | `INT64` | REQUIRED | Sequential kilometer split index (`1`, `2`, `3`, ...) |
+| `Distance_km` | `FLOAT64` | NULLABLE | Distance covered in this split (e.g. `1.00`, or `0.42` final) |
+| `Duration_sec` | `INT64` | NULLABLE | Moving time in seconds for this split |
+| `Elapsed_Time_sec` | `INT64` | NULLABLE | Elapsed time in seconds for this split |
+| `Duration_min` | `FLOAT64` | NULLABLE | Moving time in minutes for this split |
+| `Pace` | `STRING` | NULLABLE | Formatted pace string (`MM:SS/km`) |
+| `Pace_Dec_Min` | `FLOAT64` | NULLABLE | Decimal pace in min/km (e.g. `5.50`) for BI line charts |
+| `Elevation_Diff_m` | `FLOAT64` | NULLABLE | Elevation change in meters during this split |
+| `Avg_HR` | `FLOAT64` | NULLABLE | Average heart rate during this kilometer |
+| `Avg_Speed_kmh` | `FLOAT64` | NULLABLE | Average speed in km/h |
+| `Avg_Grade_Adjusted_Speed_kmh` | `FLOAT64` | NULLABLE | Grade Adjusted Pace (flat-equivalent speed in km/h) |
+| `Pace_Zone` | `INT64` | NULLABLE | Strava pace zone index |
+
+#### Dimensional Join View (`vw_strava_activity_splits`)
+The warehouse materializes an enriched view joining `strava_activity_splits` with parent workout attributes (`Activity_Name`, `Shoe_Used`, `Activity_Type`, `City`, `Country`), allowing Google Looker Studio dashboards to slice split trends by shoes, workout classifications, or geographic terrain without expensive runtime subqueries.
+
+### 4.3 Idempotency & Deduplication Strategy
 To guarantee data integrity across pipeline retries and backfills, the pipeline implements a two-tiered deduplication strategy:
 1. **Incremental Sync**: BigQuery set filtering prevents double-insertion of activities already present in the destination table.
 2. **Backfill Reconciliation (`backfill.py`)**: Uses a temporary staging table (`strava_activities_temp`) and an atomic SQL `MERGE` statement:
