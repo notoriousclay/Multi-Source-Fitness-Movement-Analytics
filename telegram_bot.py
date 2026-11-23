@@ -36,10 +36,32 @@ def init_bigquery():
         return bigquery.Client(credentials=creds, project=creds.project_id)
     return bigquery.Client(project=PROJECT_ID)
 
-def get_gemini_client():
-    if not GEMINI_API_KEY:
-        raise ValueError("Missing GEMINI_API_KEY in environment or .env file.")
-    return genai.Client(api_key=GEMINI_API_KEY)
+def generate_text_fallback(prompt: str) -> str:
+    """Fallback text generator via BigQuery ML remote model if Gemini API credit is exhausted."""
+    client = init_bigquery()
+    bt = chr(96)
+    q = f"""
+    SELECT ml_generate_text_result
+    FROM ML.GENERATE_TEXT(
+      MODEL {bt}{PROJECT_ID}.strava_data.gemini_remote_model{bt},
+      (SELECT @prompt_val AS prompt),
+      STRUCT(0.3 AS temperature, 450 AS max_output_tokens)
+    )
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("prompt_val", "STRING", prompt)
+        ]
+    )
+    rows = list(client.query(q, job_config=job_config).result())
+    if rows:
+        result = rows[0].get("ml_generate_text_result", {})
+        candidates = result.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                return parts[0].get("text", "").strip()
+    return "{}"
 
 # ==============================================================================
 # 1. ATHLETE FEEDBACK EXTRACTOR (VOICE & TEXT)
@@ -111,12 +133,18 @@ async def handle_voice_and_text(update: Update, context: ContextTypes.DEFAULT_TY
         - "coaching_response": a supportive 1-2 sentence response confirming their feedback.
         Output ONLY the raw JSON string.
         """
-        response = gemini.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt
-        )
         try:
-            cleaned = response.text.strip().replace("```json", "").replace("```", "").strip()
+            gemini = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+            response = gemini.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt
+            )
+            raw_resp = response.text
+        except Exception:
+            raw_resp = generate_text_fallback(prompt)
+
+        try:
+            cleaned = raw_resp.strip().replace("```json", "").replace("```", "").strip()
             data = json.loads(cleaned)
         except Exception:
             data = {

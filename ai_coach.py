@@ -50,6 +50,51 @@ def get_gemini_client():
         raise ValueError("Missing GEMINI_API_KEY in environment or .env file.")
     return genai.Client(api_key=GEMINI_API_KEY)
 
+def generate_text_with_gemini(prompt: str) -> str:
+    """
+    Attempts generation via direct Gemini API key first;
+    falls back seamlessly to BigQuery's native gemini_remote_model if credits are exhausted.
+    """
+    # 1. Try Gemini API
+    if GEMINI_API_KEY:
+        try:
+            gemini = get_gemini_client()
+            res = gemini.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt
+            )
+            if res and res.text:
+                return res.text.strip()
+        except Exception as e:
+            print(f"⚠️ Direct Gemini API failed: {e}. Falling back to BigQuery ML Gemini remote model...")
+
+    # 2. BigQuery ML Fallback using parameterized query
+    client = init_bigquery()
+    bt = chr(96)
+    q = f"""
+    SELECT ml_generate_text_result
+    FROM ML.GENERATE_TEXT(
+      MODEL {bt}{PROJECT_ID}.strava_data.gemini_remote_model{bt},
+      (SELECT @prompt_val AS prompt),
+      STRUCT(0.3 AS temperature, 350 AS max_output_tokens)
+    )
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[
+            bigquery.ScalarQueryParameter("prompt_val", "STRING", prompt)
+        ]
+    )
+    rows = list(client.query(q, job_config=job_config).result())
+    if rows:
+        result = rows[0].get("ml_generate_text_result", {})
+        candidates = result.get("candidates", [])
+        if candidates:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts:
+                return parts[0].get("text", "").strip()
+
+    return "Workout completed successfully! Great effort out there."
+
 # ==============================================================================
 # 1. POST-RUN DEBRIEFING
 # ==============================================================================
@@ -115,12 +160,8 @@ def run_post_activity_debrief(strava_id: int = None):
     Keep it conversational, encouraging, and under 80 words.
     """
     
-    gemini = get_gemini_client()
-    response = gemini.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
-    )
-    debrief_text = f"🏃 *Workout Debrief: {act.activity_name}*\n\n{response.text.strip()}\n\n_(Reply with a voice note or text to log your RPE & feedback)_"
+    debrief_text_content = generate_text_with_gemini(prompt)
+    debrief_text = f"🏃 *Workout Debrief: {act.activity_name}*\n\n{debrief_text_content}\n\n_(Reply with a voice note or text to log your RPE & feedback)_"
     send_telegram_message(debrief_text)
 
 # ==============================================================================
