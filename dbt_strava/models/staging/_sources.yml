@@ -45,3 +45,11 @@ sources:
             description: "Aggregated step count"
             tests:
               - not_null
+
+      - name: athlete_feedback
+        description: "Qualitative human-in-the-loop athlete debriefs, RPE, and muscle soreness logged via Telegram"
+        columns:
+          - name: feedback_id
+            tests:
+              - not_null
+              - unique
