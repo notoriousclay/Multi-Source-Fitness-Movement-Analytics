@@ -1,0 +1,54 @@
+name: Deploy Telegram Webhook (Cloud Functions)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'telegram_webhook.py'
+      - '.github/workflows/deploy_telegram_webhook.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy Telegram Bot Webhook
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy Cloud Function (Telegram Webhook)
+        id: deploy
+        run: |
+          gcloud functions deploy strava-ai-coach-webhook \
+            --gen2 \
+            --runtime=python311 \
+            --region=${{ secrets.GCP_REGION || 'asia-southeast1' }} \
+            --source=. \
+            --entry-point=telegram_webhook \
+            --trigger-http \
+            --allow-unauthenticated \
+            --timeout=180s \
+            --memory=512Mi \
+            --set-env-vars="GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID || 'strava-sync-505308' }},TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }},TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }},GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+
+      - name: Register Telegram Webhook URL
+        run: |
+          URL=$(gcloud functions describe strava-ai-coach-webhook --gen2 --region=${{ secrets.GCP_REGION || 'asia-southeast1' }} --format="value(serviceConfig.uri)")
+          echo "Registering Webhook URL: $URL"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/setWebhook" \
+               -H "Content-Type: application/json" \
+               -d "{\"url\": \"$URL\"}"
