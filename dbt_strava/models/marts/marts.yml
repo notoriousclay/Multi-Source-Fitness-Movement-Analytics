@@ -1,0 +1,47 @@
+version: 2
+
+models:
+  - name: fct_activities
+    description: "Core fact table of all fitness activities enriched with ACWR metrics"
+    columns:
+      - name: strava_id
+        tests:
+          - unique
+          - not_null
+      - name: activity_date
+        tests:
+          - not_null
+
+  - name: fct_activity_splits
+    description: "Kilometer pace split records joined with workout context"
+    columns:
+      - name: strava_id
+        tests:
+          - not_null
+      - name: split_num
+        tests:
+          - not_null
+
+  - name: fct_daily_health_summary
+    description: "Daily conformed mart for health, steps, and load metrics"
+    columns:
+      - name: summary_date
+        tests:
+          - unique
+          - not_null
+
+  - name: dim_shoes
+    description: "Footwear dimension table with health status and lifespan"
+    columns:
+      - name: shoe_name
+        tests:
+          - unique
+          - not_null
+
+  - name: fct_race_predictions
+    description: "Riegel's endurance race projections (5K, 10K, HM, Marathon)"
+    columns:
+      - name: race_name
+        tests:
+          - unique
+          - not_null

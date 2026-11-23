@@ -1,0 +1,47 @@
+version: 2
+
+sources:
+  - name: strava_raw
+    database: "{{ env_var('GCP_PROJECT_ID', 'strava-sync-505308') }}"
+    schema: strava_data
+    tables:
+      - name: strava_activities
+        description: "Raw activity stream landed from Strava API v3"
+        loaded_at_field: Date
+        freshness:
+          warn_after: {count: 48, period: hour}
+        columns:
+          - name: Strava_ID
+            description: "Unique activity identifier"
+            tests:
+              - not_null
+          - name: Date
+            description: "Workout calendar date"
+            tests:
+              - not_null
+
+      - name: strava_activity_splits
+        description: "Kilometer pace split records from Strava detailed activity stream"
+        columns:
+          - name: Strava_ID
+            description: "Strava Activity ID reference"
+            tests:
+              - not_null
+          - name: Split_Num
+            description: "Kilometer split index (1-based)"
+            tests:
+              - not_null
+
+      - name: daily_steps
+        description: "Passive 24h step telemetry synced from Google Fit (Pixel 8a)"
+        loaded_at_field: Ingested_At
+        columns:
+          - name: Date
+            description: "Calendar date"
+            tests:
+              - not_null
+              - unique
+          - name: Total_Steps
+            description: "Aggregated step count"
+            tests:
+              - not_null

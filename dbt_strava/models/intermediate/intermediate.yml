@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: int_running_workload_acwr
+    description: "Acute to Chronic Workload Ratio (ACWR) modeled on rolling 7d vs 28d continuous timeline"
+    columns:
+      - name: calendar_date
+        tests:
+          - unique
+          - not_null
+
+  - name: int_shoe_mileage_metrics
+    description: "Shoe rotation wear, lifespan, and depreciation tracking"
+    columns:
+      - name: shoe_name
+        tests:
+          - unique
+          - not_null
+
+  - name: int_daily_activity_step_reconciliation
+    description: "Reconciles Google Fit passive daily steps with Strava active running steps"
+    columns:
+      - name: summary_date
+        tests:
+          - unique
+          - not_null

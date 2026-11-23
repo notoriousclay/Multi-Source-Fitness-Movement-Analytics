@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: stg_strava__activities
+    description: "Cleaned and deduplicated staging view for Strava activities"
+    columns:
+      - name: strava_id
+        description: "Primary key"
+        tests:
+          - unique
+          - not_null
+      - name: activity_date
+        tests:
+          - not_null
+      - name: distance_km
+        tests:
+          - not_null
+      - name: activity_type
+        tests:
+          - not_null
+
+  - name: stg_strava__activity_splits
+    description: "Cleaned kilometer pace splits per workout"
+    columns:
+      - name: strava_id
+        tests:
+          - not_null
+      - name: split_num
+        tests:
+          - not_null
+
+  - name: stg_google_fit__daily_steps
+    description: "Cleaned 24-hour step counts from Google Fit"
+    columns:
+      - name: step_date
+        tests:
+          - unique
+          - not_null
+      - name: total_steps
+        tests:
+          - not_null

@@ -1,0 +1,25 @@
+dbt_strava:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID', 'strava-sync-505308') }}"
+      dataset: strava_dbt
+      threads: 4
+      keyfile: "{{ env_var('DBT_KEYFILE', 'c:/Users/My PC/strava-fitness-analytics/credentials.json') }}"
+      location: US
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1
+    prod:
+      type: bigquery
+      method: service-account
+      project: "{{ env_var('GCP_PROJECT_ID', 'strava-sync-505308') }}"
+      dataset: strava_dbt
+      threads: 4
+      keyfile: "{{ env_var('DBT_KEYFILE', 'credentials.json') }}"
+      location: US
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1

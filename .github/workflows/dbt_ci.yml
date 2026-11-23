@@ -1,0 +1,50 @@
+name: dbt Analytics Build & Test
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'dbt_strava/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'dbt_strava/**'
+  workflow_dispatch:
+
+jobs:
+  dbt:
+    name: Run dbt Build and Data Quality Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dbt
+        run: |
+          pip install --upgrade pip
+          pip install dbt-bigquery
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Install dbt Dependencies
+        run: |
+          cd dbt_strava
+          dbt deps --profiles-dir .
+
+      - name: Run dbt Build (Transformations & Assertions)
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'strava-sync-505308' }}
+          DBT_KEYFILE: ${{ steps.auth.outputs.credentials_file_path }}
+        run: |
+          cd dbt_strava
+          dbt build --profiles-dir . --target dev
