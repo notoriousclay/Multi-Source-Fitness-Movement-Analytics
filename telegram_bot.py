@@ -36,6 +36,12 @@ def init_bigquery():
         return bigquery.Client(credentials=creds, project=creds.project_id)
     return bigquery.Client(project=PROJECT_ID)
 
+def get_gemini_client():
+    """Initializes and returns the official Gemini client if key is set."""
+    if not GEMINI_API_KEY:
+        raise ValueError("Missing GEMINI_API_KEY in environment or .env file.")
+    return genai.Client(api_key=GEMINI_API_KEY)
+
 def generate_text_fallback(prompt: str) -> str:
     """Fallback text generator via BigQuery ML remote model if Gemini API credit is exhausted."""
     client = init_bigquery()
@@ -76,9 +82,7 @@ async def handle_voice_and_text(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("⛔ Unauthorized athlete. Access restricted.")
         return
 
-    gemini = get_gemini_client()
     bq_client = init_bigquery()
-
     raw_text = ""
     input_type = "text"
 
@@ -101,23 +105,29 @@ async def handle_voice_and_text(update: Update, context: ContextTypes.DEFAULT_TY
            - "coaching_response": a supportive 1-2 sentence response confirming their feedback.
         Output ONLY the raw JSON string.
         """
-        response = gemini.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                types.Part.from_bytes(data=bytes(audio_bytes), mime_type="audio/ogg"),
-                prompt
-            ]
-        )
         try:
-            cleaned = response.text.strip().replace("```json", "").replace("```", "").strip()
+            gemini = get_gemini_client()
+            response = gemini.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=[
+                    types.Part.from_bytes(data=bytes(audio_bytes), mime_type="audio/ogg"),
+                    prompt
+                ]
+            )
+            raw_resp = response.text
+        except Exception as e:
+            raw_resp = "{}"
+
+        try:
+            cleaned = raw_resp.strip().replace("```json", "").replace("```", "").strip()
             data = json.loads(cleaned)
         except Exception:
             data = {
-                "transcript": response.text.strip(),
+                "transcript": "Voice note logged",
                 "rpe": None,
                 "soreness_location": "unknown",
                 "fatigue_level": "moderate",
-                "coaching_response": "Thanks Clay! Logged your post-run notes."
+                "coaching_response": "Thanks Clay! Logged your voice debrief."
             }
     else:
         # Text input
