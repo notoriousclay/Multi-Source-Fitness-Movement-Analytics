@@ -384,6 +384,19 @@ def run_sync():
     print(f"🆕 Found {len(new_activities)} new activities to sync into BigQuery.")
     
     upload_to_bigquery(new_activities, access_token=token)
+
+    # Trigger Phase 6 AI Coach Debrief for the newly synced running workout(s)
+    if new_activities:
+        run_activities = [act for act in new_activities if act.get("type") == "Run"]
+        if run_activities:
+            latest_run_id = run_activities[0].get("id")
+            print(f"🤖 Triggering AI Coach debrief for latest run Strava ID: {latest_run_id}...")
+            try:
+                from ai_coach import run_post_activity_debrief
+                run_post_activity_debrief(strava_id=latest_run_id)
+            except Exception as coach_err:
+                print(f"⚠️ Failed to dispatch AI Coach debrief: {coach_err}")
+
     return {
         "status": "success",
         "fetched": len(recent_activities),
