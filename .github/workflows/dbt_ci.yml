@@ -10,8 +10,9 @@ on:
     paths:
       - 'dbt_strava/**'
   schedule:
-    # Runs daily at 01:00 UTC (9:00 AM UTC+8), after the daily Cloud Scheduler sync
-    - cron: '0 1 * * *'
+    # Runs 3x daily every 8 hours at 00:30, 08:30, and 16:30 UTC (8:30 AM, 4:30 PM, 12:30 AM UTC+8)
+    # Timed 30 mins after Cloud Scheduler sync jobs
+    - cron: '30 0,8,16 * * *'
   workflow_dispatch:
 
 env:
