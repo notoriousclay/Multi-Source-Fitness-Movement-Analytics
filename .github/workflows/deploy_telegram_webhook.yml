@@ -41,7 +41,7 @@ jobs:
       - name: Stage webhook source files
         run: |
           mkdir -p /tmp/webhook_src
-          cp telegram_webhook.py /tmp/webhook_src/
+          cp telegram_webhook.py /tmp/webhook_src/main.py
           cp requirements.txt /tmp/webhook_src/
 
       - name: Deploy Cloud Function (Telegram Webhook)
