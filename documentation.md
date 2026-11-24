@@ -1,9 +1,9 @@
-# 🏃‍♂️ Strava Fitness Analytics: Enterprise Cloud ELT & GenAI Pipeline
+# 🏃‍♂️ Strava Fitness Analytics: Enterprise Cloud ELT, dbt Medallion Lakehouse & Autonomous GenAI Coaching Pipeline
 
-> **Portfolio Project:** Automated Cloud Data Pipeline, BigQuery Warehouse, In-Warehouse Gemini AI (3 Scheduled Queries) & Google Looker Studio Analytics  
-> **Role Targeted:** Data Engineer / Analytics Engineer / Data Specialist  
-> **Status:** Production / Fully Automated  
-> **Tech Stack:** Python 3.11, Google Cloud Platform (BigQuery, Cloud Functions Gen 2, Cloud Scheduler, IAM), Strava REST API, BigQuery ML (Gemini 1.5 Remote Model), GitHub Actions (CI/CD), Google Looker Studio, OpenStreetMap Nominatim  
+> **Portfolio Project:** Automated Cloud Data Pipeline, BigQuery Warehouse, dbt Medallion Architecture, Autonomous Telegram AI Coach, BigQuery ML Predictive Analytics & Google Looker Studio  
+> **Role Targeted:** Senior Data Engineer / Analytics Engineer / AI Data Solutions Specialist  
+> **Status:** Production / 100% Autonomous (Serverless & Zero-Maintenance)  
+> **Tech Stack:** Python 3.11, Google Cloud Platform (BigQuery, Cloud Functions Gen 2, Cloud Scheduler, IAM), dbt Core (dbt-bigquery), Strava API v3, Google Fit REST API, BigQuery ML (Gemini 2.5 Flash Lite Remote Model & ARIMA_PLUS), Telegram Bot API, GitHub Actions CI/CD (Multi-workflow), Google Looker Studio  
 > **Live Data Studio Dashboard:** [https://datastudio.google.com/s/gXCMPgKJH48](https://datastudio.google.com/s/gXCMPgKJH48)  
 > **GitHub Repository:** [github.com/notoriousclay/strava-fitness-analytics](https://github.com/notoriousclay/strava-fitness-analytics)
 
@@ -11,562 +11,413 @@
 
 ## 📌 Executive Summary
 
-Modern endurance athletes generate rich, high-frequency telemetry (GPS coordinates, cadence, heart rate, elevation gain, and equipment wear), yet native fitness applications isolate these data points in proprietary silos with limited analytical depth.
+Modern endurance athletes generate rich, high-frequency telemetry across disparate platforms: GPS devices (Strava), biometric background step counters (Google Fit), and qualitative post-workout perceptions (RPE, localized muscular soreness, and fatigue). Traditionally, these records exist in isolated silos or require expensive manual logging.
 
-This project delivers an **end-to-end, automated Enterprise Data Pipeline** that:
-1. **Extracts** raw athletic telemetry from the **Strava REST API** using automated OAuth 2.0 token rotation.
-2. **Enriches** records with **spatial reverse-geocoding** (OpenStreetMap Nominatim) and **biomechanical feature engineering** (cadence estimation, stride frequency, pace formatting).
-3. **Ingests** data incrementally into **Google Cloud BigQuery** with zero-loss deduplication and idempotent reconciliation.
-4. **Synthesizes Multi-Granular GenAI Coaching Reports** directly in SQL using **Google Gemini 1.5 via BigQuery ML (`ML.GENERATE_TEXT`)** orchestrated via **3 automated BigQuery Scheduled Queries** (Daily Session, Weekly Microcycle, and Monthly Mesocycle summaries).
-5. **Orchestrates** deployment via **GitHub Actions CI/CD** and execution via **Google Cloud Scheduler**.
-6. **Visualizes** longitudinal trends, shoe depreciation, training intensity distributions, and AI coaching narratives in an executive **Google Looker Studio** dashboard.
-
-> 💡 **Key Portfolio Takeaway:**  
-> This project demonstrates how modern Data Engineers and Analytics Engineers build serverless, cost-optimized pipelines that integrate traditional ELT warehousing with automated in-warehouse Generative AI.
+This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Platform** that:
+1. **Multi-Source ELT Extraction**: Autonomously extracts workout telemetry from the **Strava REST API** (OAuth 2.0 automatic token rotation) and daily background activity from the **Google Fit REST API**.
+2. **Reverse Geocoding & Biomechanical Enrichment**: Enriches activities with physical location data via OpenStreetMap Nominatim and biomechanical metrics (step frequencies, cadence, pace formatting).
+3. **dbt Medallion Architecture (Bronze → Silver → Gold)**:
+   - **Bronze (Staging)**: Cleans, types, and standardizes raw Strava activities, kilometer splits, Google Fit daily step aggregates, and qualitative athlete debriefs.
+   - **Silver (Intermediate)**: Calculates acute (7-day) vs chronic (28-day) workload ratios (**ACWR**), shoe cumulative mileage and depreciation thresholds, and cross-reconciles daily step counts against logged workouts.
+   - **Gold (Marts)**: Serves production analytical marts (`fct_activities`, `fct_activity_splits`, `fct_daily_health_summary`, `fct_race_predictions`, `dim_shoes`, and `fct_athlete_training_journal`) enforced with **47+ automated data quality tests**.
+4. **Predictive Analytics (BigQuery ML)**:
+   - **Riegel's Endurance Formula**: Models projected race times across 5K, 10K, Half-Marathon, and Marathon based on rolling peak athletic performances.
+   - **ARIMA_PLUS Time-Series Forecasting**: Detects longitudinal volume trends and automated seasonality breaks.
+5. **Autonomous AI Coach & Human-in-the-Loop Feedback (Telegram Webhook)**:
+   - Serverless Cloud Functions Gen 2 HTTP webhook receiving real-time Telegram athlete notes, treadmill console OCR images, and voice debriefs.
+   - Synthesizes qualitative metrics (RPE, soreness location, fatigue level) directly into BigQuery (`athlete_feedback`).
+   - Resilient GenAI engine with dual-tier fallback: direct Gemini API with automatic failover to BigQuery ML's native `gemini_remote_model`.
+6. **Triple-Scheduled Serverless Orchestration**:
+   - Google Cloud Scheduler executes ingestion every 8 hours (`0 */8 * * *`).
+   - GitHub Actions CI/CD automatically triggers `dbt build` 30 minutes later (`30 0,8,16 * * *`), keeping all data marts fresh with zero infrastructure cost.
+7. **Business Intelligence**: Visualizes acute-to-chronic injury risk zones, training volume distributions, equipment lifespan, and the interactive **Athlete Training Journal** in Google Looker Studio.
 
 ---
 
-## 🏗️ Architecture Flowchart
+## 🏗️ Master Architecture Flowchart
 
 ```mermaid
 flowchart TD
-    subgraph SOURCELAYER ["1. Data Ingestion & External APIs"]
-        A["Strava API v3<br/>/athlete/activities & /gear"] -->|OAuth2 Refresh Token| B["Python Extraction Engine<br/>(sync.py)"]
-        OSM["OpenStreetMap Nominatim<br/>Reverse Geocoding"] -->|Spatial Lat/Lng| B
+    subgraph SOURCES ["1. Multi-Source Ingestion & External APIs"]
+        S1["Strava REST API v3<br/>/athlete/activities & /gear"] -->|OAuth 2.0 Auto-Refresh| EXT["Python Ingestion Engine<br/>(sync.py & sync_google_fit.py)"]
+        S2["Google Fit REST API<br/>Daily Step Aggregates"] -->|OAuth2 Bearer Token| EXT
+        S3["OpenStreetMap Nominatim"] -->|Spatial Lat/Lng Reverse Geocoding| EXT
     end
 
-    subgraph ORCHESTRATION ["2. CI/CD & Serverless Orchestration"]
-        GH["GitHub Repository<br/>(main branch)"] -->|Push / Workflow Dispatch| GHA["GitHub Actions CI/CD<br/>(deploy.yml)"]
-        GHA -->|Automated Deploy| GCF["Google Cloud Functions v2<br/>(strava-fitness-sync / Python 3.11)"]
-        CS["Cloud Scheduler<br/>(Cron: 0 */8 * * *)"] -->|Every 8h OIDC Trigger| GCF
-        WTS["Local Fallback Runner<br/>(Task Scheduler / setup_task.ps1)"] -.->|Emergency / Local Run| B
+    subgraph SERVERLESS ["2. Serverless Cloud Compute & Webhooks"]
+        CS["Google Cloud Scheduler<br/>(Cron: 0 */8 * * * - Asia/Hong_Kong)"] -->|OIDC Trigger| GCF1["Cloud Function: strava-fitness-sync<br/>(Python 3.11 Gen 2)"]
+        EXT --> GCF1
+        
+        TG["Telegram Mobile App<br/>(Athlete Voice/Text/Treadmill Photo)"] -->|HTTPS Webhook| GCF2["Cloud Function: strava-ai-coach-webhook<br/>(Python 3.11 Gen 2 / Serverless)"]
     end
 
-    subgraph STORAGE ["3. Enterprise Data Warehouse & Modeling"]
-        GCF -->|Incremental Ingestion<br/>7-Day Sliding Window| BQ[("Google BigQuery<br/>strava_data.strava_activities")]
-        BF["Full Backfill & Reconciliation<br/>(backfill.py)"] -->|Idempotent SQL MERGE| BQ
+    subgraph BRONZE ["3. Bronze Raw Data Layer (BigQuery strava_data)"]
+        GCF1 -->|Sliding-Window Deduplicated Load| BQ_ACT[("strava_activities<br/>Raw Activity Telemetry")]
+        GCF1 -->|Per-Kilometer Ingestion| BQ_SPLITS[("strava_activity_splits<br/>Pace & Elevation Splits")]
+        GCF1 -->|Daily Health Sync| BQ_STEPS[("google_fit_daily_steps<br/>Passive Background Steps")]
+        GCF2 -->|Real-Time Feedback Ingestion| BQ_FEEDBACK[("athlete_feedback<br/>RPE, Soreness, Qualitative Notes")]
     end
 
-    subgraph AIENGINE ["4. BigQuery Scheduled Queries & Gemini ML"]
-        BQ --> SQ1["Scheduled Query 1:<br/>ai_workout_summary_result<br/>(Daily 16:00 UTC)"]
-        BQ --> SQ2["Scheduled Query 2:<br/>ai_weekly_summary_result<br/>(Every Sun 16:00 UTC)"]
-        BQ --> SQ3["Scheduled Query 3:<br/>ai_monthly_summary_results<br/>(Month-end 16:00 UTC)"]
+    subgraph DBT_PIPELINE ["4. Analytics Engineering Layer (dbt Core)"]
+        subgraph DBT_STAGING ["Bronze / Staging Views (strava_dbt_staging)"]
+            stg_act["stg_strava__activities"]
+            stg_splits["stg_strava__activity_splits"]
+            stg_steps["stg_google_fit__daily_steps"]
+            stg_fb["stg_strava__athlete_feedback"]
+        end
 
-        SQ1 & SQ2 & SQ3 -->|SQL Native ML.GENERATE_TEXT| GEM["Gemini Remote Model<br/>(strava_data.gemini_remote_model)"]
-        GEM -->|Materialized AI Summaries| AISUMMARY[("BigQuery AI Analytics Tables<br/>Daily, Weekly & Monthly Coaching")]
+        subgraph DBT_INT ["Silver / Intermediate Transformations (strava_dbt_intermediate)"]
+            int_acwr["int_running_workload_acwr<br/>(7d Acute vs 28d Chronic Workload)"]
+            int_shoes["int_shoe_mileage_metrics<br/>(Shoe Life & Wear Degradation)"]
+            int_recon["int_daily_activity_step_reconciliation<br/>(Strava Active Steps vs Fit Passive Steps)"]
+        end
+
+        subgraph DBT_MARTS ["Gold / Production Data Marts (strava_dbt_marts)"]
+            fct_act[("fct_activities<br/>Partitioned by Date, Clustered by Type/Shoe")]
+            fct_splits[("fct_activity_splits<br/>Deep Split Breakdown")]
+            fct_health[("fct_daily_health_summary<br/>Longitudinal Health & ACWR Risk")]
+            fct_race[("fct_race_predictions<br/>Riegel's 5K, 10K, HM, Marathon Times")]
+            dim_shoes[("dim_shoes<br/>Equipment Retirement Tracking")]
+            fct_journal[("fct_athlete_training_journal<br/>Strava + Feedback + AI Coach Notes")]
+        end
+
+        BQ_ACT --> stg_act
+        BQ_SPLITS --> stg_splits
+        BQ_STEPS --> stg_steps
+        BQ_FEEDBACK --> stg_fb
+
+        stg_act --> int_acwr
+        stg_act --> int_shoes
+        stg_act & stg_steps --> int_recon
+
+        int_acwr & stg_act --> fct_act
+        stg_splits --> fct_splits
+        int_acwr & int_recon --> fct_health
+        stg_act --> fct_race
+        int_shoes --> dim_shoes
+        fct_act & stg_fb --> fct_journal
     end
 
-    subgraph VIZ ["5. Business Intelligence & Reporting Layer"]
-        BQ -->|Direct Pushdown Live Connection| DSTUDIO["Google Looker Studio Dashboard<br/>(https://datastudio.google.com/s/gXCMPgKJH48)"]
-        AISUMMARY -->|Session, Weekly & Monthly Tables| DSTUDIO
+    subgraph ORCHESTRATION ["5. CI/CD & Automated Orchestration"]
+        GHA1["GitHub Actions: deploy.yml<br/>(Cloud Function Sync CD)"]
+        GHA2["GitHub Actions: deploy_telegram_webhook.yml<br/>(Cloud Function Webhook CD)"]
+        GHA3["GitHub Actions: dbt_ci.yml<br/>(Scheduled: 30 0,8,16 * * * & PR CI)"]
+        
+        GHA3 -->|Runs dbt build & 47+ Schema Tests| DBT_PIPELINE
     end
 
-    style SOURCELAYER fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
-    style ORCHESTRATION fill:#e3f2fd,stroke:#1976d2,stroke-width:2px;
-    style STORAGE fill:#e8f5e9,stroke:#388e3c,stroke-width:2px;
-    style AIENGINE fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
-    style VIZ fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
+    subgraph AI_PREDICTIVE ["6. Autonomous AI & In-Warehouse Intelligence"]
+        BQ_MODEL["BigQuery ML: gemini_remote_model<br/>(Vertex AI gemini-2.5-flash-lite)"]
+        ARIMA["BigQuery ML: arima_weekly_model<br/>(Time-Series Volume Forecasts)"]
+        
+        GCF2 -.->|Dual-Layer Fallback Prompting| BQ_MODEL
+        GCF1 -->|Post-Run Event Trigger| COACH["ai_coach.py<br/>(Automated Post-Run Telegram Debrief)"]
+        COACH --> TG
+    end
+
+    subgraph PRESENTATION ["7. Business Intelligence & Athlete Interface"]
+        fct_act & fct_health & fct_race & dim_shoes & fct_journal --> LOOKER["Google Looker Studio Executive Dashboard<br/>(Interactive Visual Analytics & Training Journal)"]
+        fct_health & fct_race -->|Bot Commands: /readiness, /race| TG
+    end
+
+    style SOURCES fill:#fff3e0,stroke:#f57c00,stroke-width:2px;
+    style SERVERLESS fill:#e3f2fd,stroke:#1976d2,stroke-width:2px;
+    style BRONZE fill:#efebe9,stroke:#5d4037,stroke-width:2px;
+    style DBT_PIPELINE fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    style ORCHESTRATION fill:#ede7f6,stroke:#512da8,stroke-width:2px;
+    style AI_PREDICTIVE fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px;
+    style PRESENTATION fill:#fce4ec,stroke:#c2185b,stroke-width:2px;
 ```
 
 ---
 
-## 📑 Chapter Directory
+## 📑 Complete Chapter Directory
 
-* [Chapter 1: Pipeline Architecture & High-Level System Design](#chapter-1-pipeline-architecture--high-level-system-design)
-* [Chapter 2: Data Extraction & API Ingestion Layer](#chapter-2-data-extraction--api-ingestion-layer)
-* [Chapter 3: Analytics Engineering, Geocoding & Feature Engineering](#chapter-3-analytics-engineering-geocoding--feature-engineering)
-* [Chapter 4: Data Warehousing & Schema Design in BigQuery](#chapter-4-data-warehousing--schema-design-in-bigquery)
-* [Chapter 5: In-Warehouse GenAI Analytics (BigQuery ML & 3 Scheduled Queries)](#chapter-5-in-warehouse-genai-analytics-bigquery-ml--3-scheduled-queries)
-* [Chapter 6: CI/CD Pipeline & Serverless Orchestration](#chapter-6-cicd-pipeline--serverless-orchestration)
+* [Chapter 1: End-to-End System Architecture & Technical Specifications](#chapter-1-end-to-end-system-architecture--technical-specifications)
+* [Chapter 2: Multi-Source Extraction & Ingestion Engine](#chapter-2-multi-source-extraction--ingestion-engine)
+* [Chapter 3: dbt Analytics Engineering & Medallion Data Modeling](#chapter-3-dbt-analytics-engineering--medallion-data-modeling)
+* [Chapter 4: In-Warehouse Predictive ML & GenAI Intelligence](#chapter-4-in-warehouse-predictive-ml--genai-intelligence)
+* [Chapter 5: Autonomous Telegram AI Coach & Human-in-the-Loop Webhook](#chapter-5-autonomous-telegram-ai-coach--human-in-the-loop-webhook)
+* [Chapter 6: CI/CD, Enterprise Security & Zero-Cost Cloud Orchestration](#chapter-6-cicd-enterprise-security--zero-cost-cloud-orchestration)
 * [Chapter 7: Business Intelligence & Google Looker Studio Dashboard](#chapter-7-business-intelligence--google-looker-studio-dashboard)
-* [Chapter 8: Data Governance, Security & Idempotency](#chapter-8-data-governance-security--idempotency)
-* [Chapter 9: Career & Portfolio Highlights (Role Competency Alignment)](#chapter-9-career--portfolio-highlights)
+* [Chapter 8: Data Governance, Testing & Operational Runbooks](#chapter-8-data-governance-testing--operational-runbooks)
+* [Chapter 9: Career & Engineering Competency Highlights](#chapter-9-career--engineering-competency-highlights)
 
 ---
 
-## Chapter 1: Pipeline Architecture & High-Level System Design
+## Chapter 1: End-to-End System Architecture & Technical Specifications
 
 ### 1.1 Technical Problem Statement
-Athletes capture multi-channel telemetry from smart wearables (Garmin, Coros, Apple Watch). However, analyzing this data in an enterprise setup faces four major challenges:
-1. **Short-Lived Authentication**: Strava access tokens expire after 6 hours.
-2. **API Rate Limiting**: Strava caps requests to 100 calls per 15 minutes and 1,000 per day.
-3. **Multi-Scale Analytical Needs**: Athletes require micro feedback (individual workout breakdown), meso feedback (weekly volume and recovery), and macro feedback (monthly shoe wear and aerobic adaptations).
-4. **Actionability & Latency**: Running LLM inference outside the warehouse introduces data privacy concerns and slows dashboard rendering. Pre-computing AI summaries inside BigQuery via **Scheduled Queries** resolves both.
+Endurance athletic training data presents unique analytical engineering challenges:
+1. **Multi-Source Asynchronicity**: Strava captures high-fidelity GPS workout telemetry, Google Fit passively monitors daily baseline step counts, and athlete subjective perception (RPE/soreness) is captured post-workout via mobile messaging.
+2. **Short-Lived Authentication**: Strava and Google Fit OAuth 2.0 access tokens expire every 6 hours and 1 hour respectively, demanding automated token refresh cycles with zero downtime.
+3. **Training Load Dynamics (ACWR)**: Traditional static metrics (e.g. weekly distance) fail to identify injury risk. Proper risk prediction requires computing **Acute:Chronic Workload Ratios (ACWR)** over sliding 7-day vs. 28-day windows.
+4. **LLM Cost & Data Resilience**: External LLM API calls face rate limits, billing exhaustion, and latency spikes. An enterprise architecture requires dual-tier fallback mechanisms and pre-computed in-warehouse intelligence.
 
-### 1.2 Architectural Decisions & Trade-Offs
+### 1.2 Enterprise Architectural Trade-Off Matrix
 
-| Decision Point | Chosen Architecture | Alternatives | Engineering Rationale |
+| Architecture Decision | Chosen Technology | Alternatives Evaluated | Engineering Justification |
 | :--- | :--- | :--- | :--- |
-| **Compute Engine** | Google Cloud Functions Gen 2 (Python 3.11) | Cloud Run, AWS Lambda, Compute Engine VM | Event-driven serverless compute scales to zero; zero maintenance cost when inactive. |
-| **Orchestrator** | Google Cloud Scheduler + GitHub Actions | Apache Airflow / Astronomer / Cloud Composer | Airflow requires $300+/month infrastructure for simple daily cron executions. Serverless Scheduler + CI/CD achieves 100% SLA for pennies. |
-| **Data Warehouse** | Google Cloud BigQuery | Snowflake, PostgreSQL / Cloud SQL | Native columnar partitioning, instant SQL performance, and built-in remote GenAI connections via BigQuery ML. |
-| **GenAI Modeling** | In-Warehouse Gemini LLM (`ML.GENERATE_TEXT`) | OpenAI API via Python, LangChain | Zero data egress; compliance with enterprise governance; analysts can prompt the LLM directly via SQL. |
-| **AI Scheduling** | BigQuery Scheduled Queries (Daily, Weekly, Monthly) | Cloud Tasks, External Python Schedulers | Natively automated within BigQuery; pre-computes LLM summaries so Looker Studio loads instantly without query timeout. |
-| **BI Presentation** | Google Looker Studio | Tableau, Power BI, Streamlit | Native BigQuery connector with direct pushdown querying, zero licensing cost, and shareable web links. |
+| **Data Warehouse** | Google Cloud BigQuery | Snowflake, Amazon Redshift, PostgreSQL | Columnar scalability, native partitioning/clustering, built-in SQL BigQuery ML, and zero idle compute costs. |
+| **Transformation Framework** | **dbt Core (dbt-bigquery)** | Stored Procedures, Apache Spark, Dataform | Industry-standard medallion modeling, declarative dependency DAGs, built-in documentation, and automated schema testing. |
+| **Ingestion Compute** | Google Cloud Functions Gen 2 | AWS Lambda, Cloud Run, Persistent VM | Scales to zero, event-driven HTTP triggers, 60-minute maximum execution timeout, native GCP IAM authentication. |
+| **Athlete Interface** | Telegram Bot API + Serverless Webhook | Mobile App, Web App, Discord Bot | Instant athlete adoption, zero friction, mobile push notifications, voice note support, and native webhook integration. |
+| **GenAI Fallback Engine** | Direct Gemini API + BigQuery ML `ML.GENERATE_TEXT` | OpenAI API, Local HuggingFace Models | Dual-tier resilience: zero egress, in-warehouse LLM execution when API credits exhaust, zero pipeline downtime. |
+| **Orchestration** | Cloud Scheduler + GitHub Actions | Apache Airflow, Prefect, Dagster | Eliminates $300+/month infrastructure costs of running an idle Airflow/Composer instance; provides 100% SLA for $0/month. |
 
 ---
 
-## Chapter 2: Data Extraction & API Ingestion Layer
+## Chapter 2: Multi-Source Extraction & Ingestion Engine
 
-The extraction engine (`sync.py`) runs in Google Cloud Functions and handles the entire API interaction lifecycle.
+### 2.1 Strava Ingestion (`sync.py`)
+- **Automated OAuth 2.0 Rotation**: Automatically sends `grant_type=refresh_token` to Strava's token endpoint before every sync execution.
+- **7-Day Sliding Window**: Daily sync targets `after = now() - 7 days`, querying BigQuery for existing `Strava_ID` keys to insert only net-new records. Average execution time is **< 8 seconds**.
+- **Per-Kilometer Split Ingestion**: For running activities, individual kilometer split data (distance, elapsed time, moving time, elevation difference, pace) is fetched and staged into `strava_activity_splits`.
+- **Spatial Reverse Geocoding**: Queries OpenStreetMap Nominatim with caching to enrich GPS start coordinates into City, State, and Country fields.
+- **Post-Run AI Hook**: Upon inserting a new run, automatically calls `run_post_activity_debrief()` to trigger the autonomous AI coach message to Telegram.
 
-### 2.1 Automated OAuth 2.0 Token Refresh
-Strava requires refresh tokens to exchange for temporary bearer tokens. The script initiates a POST request before every run:
+### 2.2 Google Fit Passive Step Ingestion (`sync_google_fit.py`)
+- Queries Google Fit REST API `dataset:aggregate` endpoint with 1-day bucket sizes (`bucketByTime: 86400000 ms`).
+- Aggregates daily background steps (`com.google.step_count.delta`) and distance into `strava_data.google_fit_daily_steps`.
+- Enables cross-reconciling passive baseline physical activity against dedicated workouts.
 
-```python
-def get_strava_access_token():
-    url = "https://www.strava.com/oauth/token"
-    payload = {
-        "client_id": STRAVA_CLIENT_ID,
-        "client_secret": STRAVA_CLIENT_SECRET,
-        "refresh_token": STRAVA_REFRESH_TOKEN,
-        "grant_type": "refresh_token"
-    }
-    response = requests.post(url, data=payload)
-    response.raise_for_status()
-    return response.json()["access_token"]
+---
+
+## Chapter 3: dbt Analytics Engineering & Medallion Data Modeling
+
+The analytical modeling layer is built using **dbt Core** (`dbt_strava/`), adopting a strict Medallion Architecture across three dedicated BigQuery datasets:
+
+```
+[Raw Tables]               [Staging Views]               [Intermediate Views]             [Production Marts]
+strava_activities    ──>   stg_strava__activities   ──>   int_running_workload_acwr   ──>   fct_activities
+strava_splits        ──>   stg_strava__splits       ──>   int_shoe_mileage_metrics    ──>   fct_activity_splits
+google_fit_steps     ──>   stg_google_fit__steps    ──>   int_step_reconciliation     ──>   fct_daily_health_summary
+athlete_feedback     ──>   stg_athlete_feedback     ───────────────────────────────>   fct_race_predictions
+                                                                                          dim_shoes
+                                                                                          fct_athlete_training_journal
 ```
 
-### 2.2 7-Day Sliding Window Incremental Sync
-Rather than re-fetching years of historical workouts, the daily sync focuses on a **7-day sliding window**:
-- Computes `after_timestamp = int((datetime.now() - timedelta(days=7)).timestamp())`.
-- Queries BigQuery for existing keys: `SELECT Strava_ID FROM strava_activities`.
-- Filters records in memory: `new_activities = [act for act in recent if act['id'] not in existing_ids]`.
-- **Result:** Average daily execution time under **6 seconds**, consuming fewer than 5 API calls per day.
+### 3.1 Bronze / Staging Models (`strava_dbt_staging`)
+- **`stg_strava__activities`**: Deduplicates records using `ROW_NUMBER() OVER (PARTITION BY Strava_ID ORDER BY Ingestion_Timestamp DESC)`, parses ISO timestamps, converts distance from meters to kilometers, formats moving pace (`MM:SS/km`), and casts metadata.
+- **`stg_strava__activity_splits`**: Normalizes kilometer split intervals, calculates split elevation variance, and formats per-kilometer pace.
+- **`stg_google_fit__daily_steps`**: Cleans passive daily step counts, dates, and active durations.
+- **`stg_strava__athlete_feedback`**: Cleans qualitative feedback, normalizes RPE integers (1–10), soreness anatomical locations, and AI coach response logs.
 
-<details>
-<summary><b>🔍 Click to view Rate Limit Handling & Historical Backfill Logic</b></summary>
+### 3.2 Silver / Intermediate Models (`strava_dbt_intermediate`)
+- **`int_running_workload_acwr`**:
+  Calculates the **Acute-to-Chronic Workload Ratio (ACWR)** using sliding window analytic functions over a generated continuous daily calendar:
+  - **Acute Workload (7-Day Rolling Volume)**: Represents current physical fatigue.
+  - **Chronic Workload (28-Day Rolling Average Weekly Volume)**: Represents athletic aerobic baseline fitness.
+  - **ACWR Metric**:
+    $$\text{ACWR} = \frac{\text{Acute Workload (7-Day km)}}{\text{Chronic Workload (28-Day Rolling Weekly km)}}$$
+  - **Risk Categorization**:
+    - $\text{ACWR} < 0.80$: *Under-training / High Recovery*
+    - $0.80 \le \text{ACWR} \le 1.30$: *Optimal "Sweet Spot" (Progressive Aerobic Overload)*
+    - $1.31 \le \text{ACWR} \le 1.49$: *Elevated Risk (Monitor Fatigue)*
+    - $\text{ACWR} \ge 1.50$: *Critical Injury Hazard / Spiked Volume Danger*
+- **`int_shoe_mileage_metrics`**: Aggregates running shoe depreciation, total lifetime kilometers, total sessions logged, and percentage of safe lifespan completed (assuming 650 km retirement benchmark).
+- **`int_daily_activity_step_reconciliation`**: Reconciles dedicated Strava workout steps against total Google Fit daily steps to derive passive non-workout steps and total daily physical strain.
 
-```python
-def safe_strava_request(url, headers, params=None):
-    """Wraps Strava API calls with rate-limit detection and exponential backoff."""
-    while True:
-        res = requests.get(url, headers=headers, params=params)
-        if res.status_code == 429:
-            print("⏳ Strava API rate limit (429) hit. Waiting 60 seconds...", flush=True)
-            time.sleep(60)
-            continue
-        res.raise_for_status()
-        return res.json()
-```
-</details>
+### 3.3 Gold / Production Marts (`strava_dbt_marts`)
+- **`fct_activities`**: Partitioned by `activity_date` and clustered by `activity_type` and `shoe_name`. Enriched with ACWR values at the time of each run.
+- **`fct_activity_splits`**: Granular kilometer breakdown for pacing consistency analysis (negative splits, fade detection).
+- **`fct_daily_health_summary`**: Master daily table combining acute/chronic workload, ACWR hazard category, total daily steps, and workout counts.
+- **`fct_race_predictions`**: Employs **Riegel's Endurance Formula** against the athlete's peak 5K/10K baseline to forecast race performance:
+  $$T_2 = T_1 \times \left(\frac{D_2}{D_1}\right)^{1.06}$$
+  Projects target times and required pacing for 5K, 10K, Half Marathon, and Full Marathon.
+- **`dim_shoes`**: Equipment dimension table indicating mileage status (`Optimal`, `Moderate Wear`, `Retire Soon`, `Retired`).
+- **`fct_athlete_training_journal`**: High-value human-in-the-loop mart joining Strava physical metrics (`fct_activities`) with Telegram qualitative feedback (`stg_strava__athlete_feedback`) on `strava_id` and date proximity. Displays workout stats alongside RPE, soreness, athlete voice transcripts, and AI coach recommendations.
 
----
-
-## Chapter 3: Analytics Engineering, Geocoding & Feature Engineering
-
-### 3.1 Spatial Reverse-Geocoding
-Strava provides raw coordinates `[14.376, 120.963]`. To enable geographic filtering in Looker Studio, the pipeline interfaces with the **OpenStreetMap Nominatim Reverse Geocoding API**:
-- **Extracted Fields:** `City_District`, `Village`, `Town`, `City`, `Municipality`, `State`, `Country`.
-- **Coordinate Memoization (`GEO_CACHE`):** Coordinates are rounded to 3 decimal places (~110m resolution) and cached in an in-memory dictionary. Repeated workouts from the same starting point trigger zero external API calls.
-
-### 3.2 Biomechanical Metrics & Feature Imputation
-Endurance metrics require domain-specific transformations:
-
-1. **Pace Formatting:**
-   $$\text{Pace Decimal} = \frac{\text{Duration (min)}}{\text{Distance (km)}}$$
-   Converted into human-readable format `MM:SS/km` (e.g. `05:36/km`).
-2. **Step Count & Cadence Imputation:**
-   - **Hardware present:** $\text{Total Steps} = (\text{Cadence} \times 2) \times \text{Duration}_{\text{min}}$.
-   - **Hardware missing for Runs:** Dynamic regression modeling:
-     $$\text{SPM}_{\text{est}} = \max(145.0, \min(180.0, 140.0 + 2.3 \times \text{Speed}_{\text{km/h}}))$$
-   - **Walks/Hikes:** Standard foot-strike constant of $1,300 \text{ steps/km}$.
-
-### 3.3 BI-Friendly Temporal Breakdown
-Standard calendar strings often cause alphabetical sorting bugs in dashboard engines. The pipeline generates structured temporal dimensions:
-- `Day_Num`: Zero-padded string (`01` = Monday ... `07` = Sunday) for natural sorting.
-- `Week_Num`: ISO week of the year (`01` to `53`).
-- `Month_Num`: Zero-padded calendar month (`01` to `12`).
-- `Start_Time` / `End_Time`: Split from ISO timestamp to support circadian time-of-day binning.
+### 3.4 Automated Data Quality & Schema Testing
+Enforces **47+ automated dbt tests** across all models:
+- Primary key uniqueness and non-null assertions on all surrogate/natural keys.
+- Range acceptance tests (e.g. RPE between 1 and 10; ACWR non-negative; cadence within biological boundaries).
+- Referential integrity relationships between splits/journal and master activities.
 
 ---
 
-## Chapter 4: Data Warehousing & Schema Design in BigQuery
+## Chapter 4: In-Warehouse Predictive ML & GenAI Intelligence
 
-### 4.1 Schema Definition (`strava_data.strava_activities`)
-
-| Column Name | SQL Type | Mode | Description |
-| :--- | :--- | :--- | :--- |
-| `Strava_ID` | `INT64` | REQUIRED | Primary Unique Identifier from Strava API |
-| `Name` | `STRING` | NULLABLE | Activity title entered by athlete |
-| `Date` | `DATE` | REQUIRED | Activity calendar date (`YYYY-MM-DD`) |
-| `Year_Name` | `STRING` | NULLABLE | 4-digit year representation |
-| `Month_Name`| `STRING` | NULLABLE | Full month name (e.g., "August") |
-| `Month_Num` | `STRING` | NULLABLE | Zero-padded month index (`01` - `12`) |
-| `Day_Name`  | `STRING` | NULLABLE | Day of week string (e.g., "Sunday") |
-| `Day_Num`   | `STRING` | NULLABLE | ISO weekday order (`01` to `07`) |
-| `Week_Num`  | `STRING` | NULLABLE | ISO calendar week number (`01` - `53`) |
-| `Type`      | `STRING` | REQUIRED | Sport category (`Run`, `Walk`, `Ride`) |
-| `Distance_km`| `FLOAT64`| NULLABLE | Cleaned distance in kilometers |
-| `Duration_min`| `FLOAT64`| NULLABLE| Moving time in minutes |
-| `Elapsed_Time_min`| `FLOAT64`| NULLABLE| Elapsed duration including stops |
-| `Elevation_m`| `FLOAT64`| NULLABLE| Cumulative elevation gain in meters |
-| `Pace`      | `STRING` | NULLABLE | Display pace formatted as `MM:SS/km` |
-| `Gear`      | `STRING` | NULLABLE | Running shoe or bicycle equipment name |
-| `Start_Time`| `STRING` | NULLABLE | Workout start time (`HH:MM:SS`) |
-| `End_Time`  | `STRING` | NULLABLE | Workout completion time (`HH:MM:SS`) |
-| `Calories`  | `FLOAT64`| NULLABLE | Metabolic calorie burn |
-| `Avg_HR`    | `FLOAT64`| NULLABLE | Average heart rate in BPM |
-| `Cadence`   | `FLOAT64`| NULLABLE | Cadence in strides per minute |
-| `Total_Steps`| `INT64`  | NULLABLE | Total calculated or measured foot strikes |
-| `Avg_Steps_Min`| `INT64`| NULLABLE | Cadence in steps per minute |
-| `Start_Lat` | `FLOAT64`| NULLABLE | Starting GPS latitude |
-| `Start_Lng` | `FLOAT64`| NULLABLE | Starting GPS longitude |
-| `City`      | `STRING` | NULLABLE | Metropolitan city jurisdiction |
-| `Municipality`| `STRING`| NULLABLE| Local government municipality |
-| `State`     | `STRING` | NULLABLE | State / Regional province |
-| `Country`   | `STRING` | NULLABLE | Country of workout origin |
-
-### 4.2 Idempotency via SQL MERGE
-For backfilling and data reconciliation, `backfill.py` loads records into a temporary table (`strava_activities_temp`) and executes an idempotent `MERGE`:
-
+### 4.1 In-Warehouse LLM Architecture (BigQuery ML)
+The platform establishes a secure, remote connection to Google Vertex AI to run **Gemini 2.5 Flash Lite** directly inside SQL:
 ```sql
-MERGE `strava_data.strava_activities` T
-USING `strava_data.strava_activities_temp` S
-ON T.Strava_ID = S.Strava_ID
-WHEN MATCHED THEN
-  UPDATE SET
-    T.Name = S.Name,
-    T.Date = S.Date,
-    T.Distance_km = S.Distance_km,
-    T.Duration_min = S.Duration_min,
-    T.Elevation_m = S.Elevation_m,
-    T.Pace = S.Pace,
-    T.Gear = S.Gear,
-    T.Avg_HR = S.Avg_HR,
-    T.Total_Steps = S.Total_Steps
-WHEN NOT MATCHED THEN
-  INSERT ROW;
+CREATE OR REPLACE MODEL `strava-sync-505308.strava_data.gemini_remote_model`
+REMOTE WITH CONNECTION `asia-southeast1.gemini-llm-connection`
+OPTIONS (ENDPOINT = 'gemini-2.5-flash-lite');
 ```
 
----
+Benefits:
+- **Zero Data Egress**: Athletic data never leaves Google Cloud.
+- **High Concurrency**: Generates coaching debriefs, training cycle recaps, and anomaly analyses using native `ML.GENERATE_TEXT()` queries.
 
-## Chapter 5: In-Warehouse GenAI Analytics (BigQuery ML & 3 Scheduled Queries)
-
-Instead of relying on external Python services or fragile API orchestration to call third-party LLMs, this architecture implements **BigQuery ML with Vertex AI Remote Models**.
-
-The system automates continuous AI inference using **3 BigQuery Scheduled Queries** configured directly within Google Cloud BigQuery:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BIGQUERY SCHEDULED QUERIES                      │
-├──────────────────────────────┬────────────────────────┬────────────────┤
-│ DISPLAY NAME                 │ SCHEDULE (UTC)         │ REGION         │
-├──────────────────────────────┼────────────────────────┼────────────────┤
-│ ai_workout_summary_result    │ every day 16:00        │ us (multi-reg) │
-│ ai_weekly_summary_result     │ every sun 16:00        │ us (multi-reg) │
-│ ai_monthly_summary_results   │ 28,29,30,31 of mo 16:00│ us (multi-reg) │
-└──────────────────────────────┴────────────────────────┴────────────────┘
-                                  │
-                                  ▼
-      ┌────────────────────────────────────────────────────────┐
-      │ ML.GENERATE_TEXT(MODEL strava_data.gemini_remote_model)│
-      └───────────────────────────┬────────────────────────────┘
-                                  │
-                                  ▼
-      ┌────────────────────────────────────────────────────────┐
-      │ Materialized Columns & Tables for Looker Studio        │
-      │ • Session Summary (Workout Level)                      │
-      │ • Weekly Summary (Microcycle Level)                    │
-      │ • Monthly Summary (Mesocycle Level)                    │
-      └────────────────────────────────────────────────────────┘
-```
-
-### 5.1 Remote Gemini Model Configuration
-BigQuery connects to Vertex AI using a Google Cloud Resource Connection:
-
+### 4.2 Time-Series Forecasting with BigQuery ML `ARIMA_PLUS`
 ```sql
-CREATE OR REPLACE MODEL `strava_data.gemini_remote_model`
-REMOTE WITH CONNECTION `projects/strava-sync-505308/locations/us/connections/vertex-ai-connection`
-OPTIONS (ENDPOINT = 'gemini-1.5-flash');
+CREATE OR REPLACE MODEL `strava-sync-505308.strava_data.arima_weekly_model`
+OPTIONS (
+  MODEL_TYPE = 'ARIMA_PLUS',
+  TIME_SERIES_TIMESTAMP_COL = 'week_start',
+  TIME_SERIES_DATA_COL = 'total_distance_km',
+  AUTO_ARIMA = TRUE,
+  DATA_FREQUENCY = 'WEEKLY'
+) AS
+SELECT DATE_TRUNC(activity_date, WEEK) AS week_start, SUM(distance_km) AS total_distance_km
+FROM `strava-sync-505308.strava_dbt_marts.fct_activities`
+WHERE activity_type = 'Run'
+GROUP BY week_start;
 ```
+Automatically handles missing training weeks, models weekly seasonality, detects anomalous volume spikes, and projects future training volume.
 
 ---
 
-### 5.2 The 3 BigQuery Scheduled Queries
+## Chapter 5: Autonomous Telegram AI Coach & Human-in-the-Loop Webhook
 
-#### 1. Daily Session Summary (`ai_workout_summary_result`)
-* **Schedule:** `every day 16:00` UTC (Midnight 12:00:00 AM UTC+8)
-* **Granularity:** Individual Workout Level
-* **Objective:** Runs every night after daily runs sync. Evaluates workout intensity, pace consistency, cadence, and heart rate efficiency to generate an immediate qualitative coaching review.
-* **Destination:** Persisted into the session records and surfaced in the Looker Studio **Session Summary** table under the `Summary` column (e.g. *"Alright, let's break down this afternoon run..."*).
+### 5.1 Architecture & Flow
+The AI Coach operates in two coordinated modes:
+1. **Outbound Push (Post-Run Debrief & Safety Alerts)**:
+   - Evaluates newly synced activities or acute workload spikes.
+   - Generates contextual coaching advice and dispatches it directly to the athlete's Telegram chat via `ai_coach.py`.
+2. **Inbound Webhook (Athlete Voice, Text & Treadmill OCR)**:
+   - Serverless Cloud Function (`strava-ai-coach-webhook`) deployed via Cloud Functions Gen 2.
+   - Processes athlete incoming messages in real-time, extracts structured data, and logs it directly into BigQuery.
 
-```sql
--- Scheduled Daily at 16:00 UTC
-SELECT
-  Strava_ID,
-  Date,
-  Name,
-  Type,
-  Distance_km,
-  Cadence,
-  Pace,
-  Avg_HR,
-  ml_generate_text_llm_result AS workout_summary
-FROM ML.GENERATE_TEXT(
-  MODEL `strava_data.gemini_remote_model`,
-  (
-    SELECT
-      Strava_ID, Date, Name, Type, Distance_km, Cadence, Pace, Avg_HR,
-      CONCAT(
-        'You are an expert running coach. Analyze this individual workout: ',
-        'Name: ', Name, ', Type: ', Type, ', Date: ', CAST(Date AS STRING),
-        ', Distance: ', CAST(Distance_km AS STRING), ' km, Pace: ', Pace,
-        ', Cadence: ', IFNULL(CAST(Cadence AS STRING), 'N/A'), ' spm',
-        ', Heart Rate: ', IFNULL(CAST(Avg_HR AS STRING), 'N/A'), ' bpm. ',
-        'Provide a concise 1-2 sentence coaching breakdown starting with "Alright, let\'s break down..." evaluating pacing, form, and aerobic load.'
-      ) AS prompt
-    FROM `strava_data.strava_activities`
-    WHERE Date >= DATE_SUB(CURRENT_DATE(), INTERVAL 2 DAY)
-  ),
-  STRUCT(TRUE AS flatten_json_output, 150 AS max_output_tokens, 0.2 AS temperature)
-);
 ```
+┌────────────────────────────────────────────────────────┐
+│                   ATHLETE (TELEGRAM)                   │
+└───────────────────────────┬────────────────────────────┘
+                            │
+       ┌────────────────────┴────────────────────┐
+       ▼                                         ▼
+[Commands: /readiness, /race]      [Voice / Text / Treadmill OCR]
+       │                                         │
+       │ HTTPS POST                              │ HTTPS POST
+       ▼                                         ▼
+┌────────────────────────────────────────────────────────┐
+│       Google Cloud Function Gen 2: Webhook             │
+│            (strava-ai-coach-webhook)                   │
+├────────────────────────────────────────────────────────┤
+│ • /readiness ──> Queries fct_daily_health_summary      │
+│ • /race      ──> Queries fct_race_predictions          │
+│ • Treadmill  ──> Gemini 2.0 Flash Multimodal OCR       │
+│ • Voice/Text ──> NLP Entity & Sentiment Extraction     │
+│   (RPE 1-10, Soreness Muscle Group, Fatigue Status)   │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+              ┌───────────────────────────┐
+              │ BigQuery athlete_feedback │
+              │   (Partitioned by Date)   │
+              └───────────────────────────┘
+```
+
+### 5.2 Treadmill Console OCR Vision
+When running indoors on cardio equipment without GPS, the athlete photos the treadmill console. Gemini Vision parses the screen into structured metrics:
+- Distance (km)
+- Duration & Pace
+- Incline percentage & Calories burned
+- Synthesizes a structured activity row directly into `strava_activities` with a synthetic indoor ID (`99xxxxxxxx`).
+
+### 5.3 Dual-Tier LLM Resilience Engine
+To safeguard against API quota depletion or prepayment balance interruptions (HTTP 402 / 429), the bot implements **automatic runtime failover**:
+- **Primary**: Direct Google Gemini API (`gemini-2.0-flash`).
+- **Secondary (Zero-Downtime Fallback)**: Automatically falls back to BigQuery ML's parameterized SQL query executing `ML.GENERATE_TEXT` against `strava_data.gemini_remote_model`.
 
 ---
 
-#### 2. Weekly Training Summary (`ai_weekly_summary_result`)
-* **Schedule:** `every sun 16:00` UTC (Sunday midnight / Monday 12:00:00 AM UTC+8)
-* **Granularity:** Weekly Microcycle Block
-* **Objective:** Aggregates weekly mileage, workout session frequency, cadence averages, and shoes used. Synthesizes a coaching review of weekly volume progression and recovery guidance.
-* **Destination:** Feeds into the Looker Studio **Weekly Summary** table.
+## Chapter 6: CI/CD, Enterprise Security & Zero-Cost Cloud Orchestration
 
-```sql
--- Scheduled Every Sunday at 16:00 UTC
-SELECT
-  Week_Number,
-  Week_Start,
-  Weekly_Distance_km,
-  Total_Workouts,
-  Avg_Weekly_Pace,
-  Avg_Weekly_HR,
-  Shoes_Used,
-  ml_generate_text_llm_result AS weekly_ai_summary
-FROM ML.GENERATE_TEXT(
-  MODEL `strava_data.gemini_remote_model`,
-  (
-    SELECT
-      Week_Number, Week_Start, Weekly_Distance_km, Total_Workouts, Avg_Weekly_Pace, Avg_Weekly_HR, Shoes_Used,
-      CONCAT(
-        'Act as an elite running coach. Analyze weekly training microcycle for ', Week_Number,
-        ' starting ', CAST(Week_Start AS STRING), ': Total Distance: ', CAST(Weekly_Distance_km AS STRING), ' km',
-        ', Sessions: ', CAST(Total_Workouts AS STRING), ', Avg Pace: ', Avg_Weekly_Pace,
-        ', Avg HR: ', IFNULL(CAST(Avg_Weekly_HR AS STRING), 'N/A'), ' bpm, Shoes: ', IFNULL(Shoes_Used, 'None'),
-        '. Give a 2-3 sentence coaching critique on consistency, pace management, and recovery advice.'
-      ) AS prompt
-    FROM (
-      SELECT
-        CONCAT('Week ', LPAD(CAST(Week_Num AS STRING), 2, '0')) AS Week_Number,
-        DATE_TRUNC(Date, WEEK(MONDAY)) AS Week_Start,
-        ROUND(SUM(Distance_km), 2) AS Weekly_Distance_km,
-        COUNT(*) AS Total_Workouts,
-        FORMAT('%02d:%02d/km',
-          CAST(FLOOR(AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END)) AS INT64),
-          CAST(ROUND((AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END) - FLOOR(AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END))) * 60) AS INT64)
-        ) AS Avg_Weekly_Pace,
-        ROUND(AVG(CASE WHEN Avg_HR > 0 THEN Avg_HR END), 1) AS Avg_Weekly_HR,
-        STRING_AGG(DISTINCT Gear, ', ') AS Shoes_Used
-      FROM `strava_data.strava_activities`
-      GROUP BY 1, 2
-    )
-  ),
-  STRUCT(TRUE AS flatten_json_output, 200 AS max_output_tokens, 0.25 AS temperature)
-);
-```
+### 6.1 Multi-Workflow GitHub Actions Suite
+The repository maintains three dedicated, automated workflows:
+1. **`.github/workflows/deploy.yml`**: Deploys the main Strava & Google Fit ETL pipeline to Cloud Functions Gen 2 (`strava-fitness-sync`) upon changes to extraction code.
+2. **`.github/workflows/deploy_telegram_webhook.yml`**: Deploys the serverless Telegram webhook (`strava-ai-coach-webhook`) with minimal staging, sets environment secrets, and automatically binds the webhook URL with Telegram's API.
+3. **`.github/workflows/dbt_ci.yml`**:
+   - **Autonomous 3x Daily Schedule (`30 0,8,16 * * *`)**: Wakes up 30 minutes after each ingestion job, executes `dbt build`, updates all data marts, and validates 47+ data assertions.
+   - **PR / Commit CI**: Validates model compilation and data tests on every pull request.
 
----
-
-#### 3. Monthly Mesocycle Summary (`ai_monthly_summary_results`)
-* **Schedule:** `28,29,30,31 of month 16:00` UTC (Month-end midnight UTC+8)
-* **Granularity:** Monthly Mesocycle
-* **Objective:** Assesses monthly volume accumulation, periodization shifts (e.g. Base building vs. Marathon peak), cumulative footwear wear, and cardiovascular adaptations.
-* **Destination:** Feeds into the Looker Studio **Monthly Summary** table.
-
-```sql
--- Scheduled at Month-End at 16:00 UTC
-SELECT
-  Month_Name,
-  Year_Name,
-  Monthly_Distance_km,
-  Total_Sessions,
-  Avg_Monthly_Pace,
-  Avg_Monthly_HR,
-  ml_generate_text_llm_result AS monthly_ai_summary
-FROM ML.GENERATE_TEXT(
-  MODEL `strava_data.gemini_remote_model`,
-  (
-    SELECT
-      Month_Name, Year_Name, Monthly_Distance_km, Total_Sessions, Avg_Monthly_Pace, Avg_Monthly_HR,
-      CONCAT(
-        'You are an exercise physiologist. Evaluate the athlete monthly mesocycle for ', Month_Name, ' ', Year_Name,
-        ': Total Volume: ', CAST(Monthly_Distance_km AS STRING), ' km across ', CAST(Total_Sessions AS STRING), ' workouts',
-        ', Avg Pace: ', Avg_Monthly_Pace, ', Avg HR: ', IFNULL(CAST(Avg_Monthly_HR AS STRING), 'N/A'), ' bpm.',
-        ' Provide a concise 2-sentence sports-science summary on monthly training volume, intensity distribution, and aerobic adaptations.'
-      ) AS prompt
-    FROM (
-      SELECT
-        Month_Name, Year_Name,
-        ROUND(SUM(Distance_km), 2) AS Monthly_Distance_km,
-        COUNT(*) AS Total_Sessions,
-        FORMAT('%02d:%02d/km',
-          CAST(FLOOR(AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END)) AS INT64),
-          CAST(ROUND((AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END) - FLOOR(AVG(CASE WHEN Type = 'Run' AND Distance_km > 0 THEN Duration_min / Distance_km END))) * 60) AS INT64)
-        ) AS Avg_Monthly_Pace,
-        ROUND(AVG(CASE WHEN Avg_HR > 0 THEN Avg_HR END), 1) AS Avg_Monthly_HR
-      FROM `strava_data.strava_activities`
-      GROUP BY 1, 2
-    )
-  ),
-  STRUCT(TRUE AS flatten_json_output, 250 AS max_output_tokens, 0.25 AS temperature)
-);
-```
-
-### 5.3 Why Scheduled Queries for In-Warehouse GenAI?
-1. **Zero Dashboard Latency**: LLM text generation can take 2–5 seconds per row. Pre-computing via Scheduled Queries materializes results ahead of time, ensuring Looker Studio queries execute instantaneously.
-2. **Cost Optimization**: Queries only execute on a defined schedule (daily, weekly, monthly) rather than recalculating on every dashboard viewer interaction.
-3. **Enterprise Governance**: Prompts, schemas, and LLM hyperparameters remain version-controlled inside the data warehouse.
-
----
-
-## Chapter 6: CI/CD Pipeline & Serverless Orchestration
-
-### 6.1 GitHub Actions Deployment (`.github/workflows/deploy.yml`)
-- Triggers automatically on push to the `main` branch.
-- Authenticates securely to Google Cloud using Workload Identity / Service Account JSON via `google-github-actions/auth@v2`.
-- Deploys `main.py` and `sync.py` to **Google Cloud Functions Gen 2**.
-- Injects Strava secrets and GCP credentials directly into environment variables.
-
-### 6.2 Cloud Scheduler Configuration
-- **Cron Expression:** `0 */8 * * *` (Every 8 Hours: 12:00 AM, 8:00 AM, 4:00 PM)
-- **Timezone:** Local Athlete Timezone (`Asia/Manila` / `Asia/Singapore`)
-- **Target:** HTTP POST / GET to Cloud Function Trigger URL
-- **Auth:** OIDC Token using dedicated service account `strava-bigquery-loader@strava-sync-505308.iam.gserviceaccount.com`
-
-### 6.3 Local Hybrid Fallback (`setup_task.ps1` & `run_sync.bat`)
-A Windows PowerShell script configures local Task Scheduler to trigger `run_sync.bat` every 8 hours, logging executions to `sync.log` in case of cloud infrastructure testing or offline runs.
+### 6.2 Zero-Cost Operational Economics
+By utilizing event-driven serverless architectures, the entire enterprise stack operates within free tier allocations:
+- **Cloud Functions Gen 2**: 2M invocations/month free (System uses ~200/month).
+- **BigQuery**: 10 GB storage free, 1 TB queries/month free (System uses < 2 GB/month).
+- **Cloud Scheduler**: 3 free jobs/month (System uses 1).
+- **GitHub Actions**: 2,000 CI/CD minutes/month free (System uses ~150 mins/month).
+- **Total Monthly Operational Cost:** **$0.00 / month**.
 
 ---
 
 ## Chapter 7: Business Intelligence & Google Looker Studio Dashboard
 
-The production analytics layer is delivered through an interactive executive dashboard deployed on **Google Looker Studio (formerly Google Data Studio)**, directly connected to BigQuery with live pushdown queries.
+**Live Interactive Dashboard:** [https://datastudio.google.com/s/gXCMPgKJH48](https://datastudio.google.com/s/gXCMPgKJH48)
 
-> 🔗 **Live Report URL:** [https://datastudio.google.com/s/gXCMPgKJH48](https://datastudio.google.com/s/gXCMPgKJH48)
+The presentation layer connects directly to BigQuery `strava_dbt_marts` using live pushdown queries:
 
+1. **Executive Training Overview**:
+   - Total kilometers, active hours, elevation climbed, and average heart rate.
+   - 30-Day moving average pace distribution and workout frequency heatmaps.
+2. **ACWR Injury Risk Matrix**:
+   - Real-time gauge and time-series line chart tracking Acute vs. Chronic Workload.
+   - Highlighted Danger Zones ($\text{ACWR} \ge 1.50$) alerting the athlete before soft-tissue injuries occur.
+3. **Equipment Depreciation & Shoe Retirement Tracker**:
+   - Mileage progression bars per shoe model against the 650 km retirement benchmark.
+4. **Predictive Race Performance**:
+   - Dynamic Riegel race targets (5K, 10K, Half-Marathon, Marathon) with required target split paces.
+5. **Human-in-the-Loop Athlete Training Journal**:
+   - Merged view of physical workouts with Telegram debrief notes, RPE exertion badges, localized soreness tags, and AI coach recommendations.
+
+---
+
+## Chapter 8: Data Governance, Testing & Operational Runbooks
+
+### 8.1 Local Execution & Development Setup
+```bash
+# 1. Clone repository
+git clone https://github.com/notoriousclay/strava-fitness-analytics.git
+cd strava-fitness-analytics
+
+# 2. Set up virtual environment
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# 3. Configure credentials
+cp .env.example .env
+# Populate STRAVA_*, TELEGRAM_*, GEMINI_*, and GCP_* credentials
 ```
-┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🟠 STRAVA DASHBOARD   [Kilometers: 356]  [Sessions: 161]  [Cadence: 163]  [HR: 110]   │
-│                       (📈 Sparkline)     (📈 Sparkline)   (📈 Sparkline)  (📈 Sparkline)│
-├────────────────────────────────────────────────────────────────────────────────────────┤
-│ FILTERS: [Run Type ▼ (All/Easy/Tempo/Long/Interval)]  [Select date range ▼]            │
-├─────────────────────────────────────────────┬──────────────────────────┬───────────────┤
-│ 📊 MONTHLY MILEAGE COMBO CHART              │ 👟 SHOE MILEAGE [KM]     │ 🏃 RUN TYPE   │
-│ • Blue Bars: Kilometers (Monthly volume)    │ • Dynafish Xiaonian: 171 │ • Easy: 238 km│
-│ • Orange Line: Sessions (Workout frequency) │ • Anta PG7 2.5: 56 km    │ • Tempo: 59 km│
-│   (Feb: 1.6km | Mar: 17.5km | May: 41.2km   │ • Qiaodan Leili: 55 km   │ • Long: 53 km │
-│    Jun: 68.9km | Jul: 74.1km | Aug: 59.6km  │ • Li-ning Feidian: 45 km │ • Interval:   │
-│    Sep: 58.5km | Oct: 31.1km)               │ • Xtep 2000KM: 29 km     │   Speedwork   │
-├─────────────────────────────────────────────┴──────────────────────────┴───────────────┤
-│ 📋 SESSION SUMMARY (161 Activities with In-Warehouse Gemini AI Coaching)               │
-│ • Day | Name | Type | Distance | Cadence | Pace | HR | AI Workout Summary              │
-│ • Oct 11: Afternoon Run | Easy | 4.01 km | 161 spm | 08:34/km | 166 bpm | "Alright..."│
-│ • Oct 04: Project Half M... | Long | 20.85 km | 160 spm | 07:03/km | 172 bpm | "..."   │
-├─────────────────────────────────────────────┬──────────────────────────────────────────┤
-│ 📅 MONTHLY SUMMARY (10 Months Mesocycle)    │ 📆 WEEKLY SUMMARY (30 Weeks Microcycle)  │
-│ • Month | Dist | Cadence | Pace | Sessions  │ • Week | Dist | Cadence | Pace | Sessions│
-│ • Oct 2026: 31.09km | 161spm | 06:42/km | 4 │ • W41: 6.72km | 160spm | 07:03/km | 2    │
-│ • Sep 2026: 58.49km | 163spm | 06:13/km | 19│ • W40: 24.37km | 163spm | 06:20/km | 2   │
-│ • Aug 2026: 59.55km | 164spm | 05:58/km | 39│ • W39: 12.14km | 165spm | 06:05/km | 4   │
-│ • Jul 2026: 74.14km | 162spm | 06:24/km | 21│ • W38: 13.36km | 163spm | 05:60/km | 4   │
-│ (Each row includes Gemini monthly summary!) │ (Each row includes Gemini weekly summary!)│
-└─────────────────────────────────────────────┴──────────────────────────────────────────┘
+
+### 8.2 Running dbt Locally
+```bash
+cd dbt_strava
+# Install dependencies
+dbt deps --profiles-dir .
+
+# Run all models and tests
+dbt build --profiles-dir . --target dev
+```
+
+### 8.3 Manual Sync & Backfill Commands
+```bash
+# Run incremental sync
+python sync.py
+
+# Run Google Fit daily step sync
+python sync_google_fit.py
+
+# Run historical backfill
+python backfill.py --days 365
 ```
 
 ---
 
-### 7.1 Key Dashboard Components
+## Chapter 9: Career & Engineering Competency Highlights
 
-#### 1. Executive Metric Scorecards (with Temporal Sparklines)
-Located across the dashboard header to deliver immediate high-level athletic benchmarks:
-* **Total Kilometers:** `356 km` (with trend sparkline tracking cumulative distance)
-* **Total Sessions:** `161 workouts` (with frequency sparkline)
-* **Average Cadence:** `163 spm` (with running form consistency sparkline)
-* **Average Heart Rate:** `110 bpm` (with cardiovascular intensity sparkline)
+This project serves as a showcase of competencies across modern **Data Engineering**, **Analytics Engineering**, and **AI System Design**:
 
-#### 2. Interactive Global Dimension Filters
-* **Run Type Filter:** Dropdown allowing cross-filtering across `Easy`, `Tempo`, `Long`, and `Interval` workouts. Selecting a type updates all charts and summary tables simultaneously.
-* **Date Range Picker:** Calendar control for filtering by custom training blocks or specific race preparation seasons.
-
-#### 3. Monthly Mileage Dual-Axis Combo Chart
-Combines distance and frequency to visualize training periodization over time:
-* **Primary Y-Axis (Blue Bars):** Total distance in kilometers per month (peaks in July at `74.1 km`, August at `59.6 km`, and September at `58.5 km`).
-* **Secondary Y-Axis (Orange Line with Markers):** Total active sessions per month (e.g. 39 sessions in August, 37 sessions in May).
-* **Analytical Value:** Reveals training consistency, volume build-up, and recovery tapers.
-
-#### 4. Shoe Mileage [KM] Donut Chart (Wear & Depreciation)
-Visualizes footwear rotation to track midsole degradation and prevent injury:
-* **Dynafish Xiaonian:** `171 km` (Primary daily trainer)
-* **Anta PG7 2.5:** `56 km` (Retired benchmark shoe)
-* **Qiaodan Feiying / Leili:** `55 km` (Lightweight tempo shoe)
-* **Li-ning Feidian 6 Elite:** `45 km` (Carbon-plated race day shoe)
-* **Xtep 2000KM 5 Pro:** `29 km` (High-durability mileage shoe)
-
-#### 5. Run Type [KM] Donut Chart (80/20 Intensity Polarized Model)
-Analyzes distance distribution across athletic workout categories:
-* **Easy Runs:** `238 km` (~67% of total volume — foundational aerobic base building)
-* **Tempo Runs:** `59 km` (~17% — lactate threshold development)
-* **Long Runs:** `53 km` (~15% — muscular endurance & glycogen depletion adaptation)
-* **Interval Workouts:** Speedwork & VO2 max stimulus
+| Competency Area | Demonstration in Project |
+| :--- | :--- |
+| **Data Pipelines & ELT** | Production OAuth 2.0 API ingestion, sliding-window incremental loads, zero-loss deduplication, and schema evolution. |
+| **Analytics Engineering** | Medallion architecture (Bronze/Silver/Gold) in dbt Core, dimensional modeling, automated schema testing, and CI/CD pipelines. |
+| **Statistical & Sports Modeling**| Acute:Chronic Workload Ratio (ACWR) injury prevention modeling, rolling window analytics, and Riegel's endurance race prediction algorithms. |
+| **Cloud & DevOps** | Google Cloud Platform (BigQuery, Cloud Functions Gen 2, Cloud Scheduler), GitHub Actions CI/CD automation, and zero-cost serverless optimization. |
+| **Generative AI & Machine Learning** | Multimodal OCR vision processing, BigQuery ML in-warehouse LLM generation (`ML.GENERATE_TEXT`), ARIMA_PLUS time-series forecasting, and dual-layer fallback resilience. |
+| **Product & BI Integration** | Serverless Telegram webhook, conversational human-in-the-loop data capture, and executive Google Looker Studio dashboards. |
 
 ---
-
-### 7.2 Tri-Level Synchronized Summaries with Embedded Gemini GenAI
-
-The core differentiator of this dashboard is the seamless embedding of **Google Gemini AI summaries** across three synchronized tables:
-
-1. **Session Summary Table (Workout Level):**
-   * Displays individual workouts with columns `Day`, `Name`, `Type`, `Distance`, `Cadence`, `Pace`, `HR`, and `Summary`.
-   * The `Summary` column renders the text generated by the daily `ai_workout_summary_result` scheduled query, providing instantaneous feedback on pacing and form for every individual workout.
-2. **Weekly Summary Table (Microcycle Level):**
-   * Columns: `Week`, `Distance`, `Cadence`, `Pace`, `Sessions`, `HR`, `Summary`.
-   * Shows weekly rollups (e.g., Week 41, Week 40, Week 39) with Gemini's weekly coaching notes evaluating weekly consistency and recovery.
-3. **Monthly Summary Table (Mesocycle Level):**
-   * Columns: `Month`, `Distance`, `Cadence`, `Pace`, `Sessions`, `HR`, `Summary`.
-   * Highlights monthly macrocycle adaptations, periodization trends, and cumulative aerobic fitness progression.
-
----
-
-## Chapter 8: Data Governance, Security & Idempotency
-
-### 8.1 Zero-Secret Storage Policy
-- All private keys (`credentials.json`) and API credentials (`.env`) are strictly tracked in `.gitignore` and `.gcloudignore`.
-- Secrets are injected into Google Cloud Functions via GitHub Actions Secrets (`GCP_SA_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `STRAVA_REFRESH_TOKEN`).
-
-### 8.2 Least-Privilege IAM Scoping
-The pipeline service account holds only the minimum permissions required:
-- `roles/cloudfunctions.admin` & `roles/run.admin`
-- `roles/bigquery.dataEditor` & `roles/bigquery.jobUser`
-- `roles/iam.serviceAccountUser`
-
----
-
-## Chapter 9: Career & Portfolio Highlights
-
-This project provides concrete evidence of technical competency across multiple data disciplines:
-
-### 🛠️ Data Engineering Competencies
-- **End-to-End ELT Automation:** Designed, deployed, and monitored a complete serverless pipeline ingesting from third-party REST APIs into a cloud data warehouse.
-- **Resilience & Rate-Limiting:** Handled OAuth2 refresh token rotation, API backoffs, and sliding-window extraction.
-- **Idempotent Data Ingestion:** Implemented set-based filtering and SQL `MERGE` operations to prevent duplicate records.
-- **CI/CD & DevOps:** Production GitHub Actions workflow with OIDC authentication, automated deployments, and logging.
-
-### 📐 Analytics Engineering Competencies
-- **Dimensional Data Modeling:** Designed clean, queryable warehouse schemas with ISO calendar hierarchies.
-- **Data Cleaning & Imputation:** Built business logic for cadence imputation, step counts, and pace calculations.
-- **In-Warehouse GenAI (BigQuery ML):** Implemented 3 BigQuery Scheduled Queries invoking Gemini (`ML.GENERATE_TEXT`) for automated session, weekly, and monthly narrative generation.
-
-### 📊 Data Analytics & BI Competencies
-- **Executive BI Reporting:** Designed an interactive Google Looker Studio dashboard featuring KPI scorecards with sparklines, dual-axis combo charts, and equipment depreciation gauges.
-- **Training Intensity Distribution:** Analyzed 80/20 polarized training adherence (Easy vs. Tempo vs. Long).
-- **Stakeholder-Ready Storytelling:** Translated complex wearable metrics into actionable athletic insights and automated coaching summaries.
-
+*Maintained with ❤️ by Clarence Lasala ([@notoriousclay](https://github.com/notoriousclay)).*
