@@ -9,7 +9,13 @@ on:
     branches: [ main ]
     paths:
       - 'dbt_strava/**'
+  schedule:
+    # Runs daily at 01:00 UTC (9:00 AM UTC+8), after the daily Cloud Scheduler sync
+    - cron: '0 1 * * *'
   workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID != '' && secrets.GCP_PROJECT_ID || 'strava-sync-505308' }}
 
 jobs:
   dbt:
@@ -43,7 +49,7 @@ jobs:
 
       - name: Run dbt Build (Transformations & Assertions)
         env:
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID || 'strava-sync-505308' }}
+          GCP_PROJECT_ID: ${{ env.GCP_PROJECT_ID }}
           DBT_KEYFILE: ${{ steps.auth.outputs.credentials_file_path }}
         run: |
           cd dbt_strava
