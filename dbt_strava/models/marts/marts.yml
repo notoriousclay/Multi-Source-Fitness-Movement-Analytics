@@ -45,3 +45,14 @@ models:
         tests:
           - unique
           - not_null
+
+  - name: fct_personal_bests
+    description: "All-time personal bests across key distance benchmarks (1km, 2km, 3km, 5km, 10km, 16km, 21km)"
+    columns:
+      - name: distance_label
+        tests:
+          - unique
+          - not_null
+      - name: duration_sec
+        tests:
+          - not_null
