@@ -53,45 +53,93 @@ windows AS (
         SUM(duration_sec) OVER w16 AS dur_16k,
         COUNT(*) OVER w16 AS cnt_16k,
         MAX(split_num) OVER w16 - split_num AS span_16k,
-        AVG(avg_heart_rate) OVER w16 AS hr_16k
+        AVG(avg_heart_rate) OVER w16 AS hr_16k,
+
+        -- 18 km
+        SUM(duration_sec) OVER w18 AS dur_18k,
+        COUNT(*) OVER w18 AS cnt_18k,
+        MAX(split_num) OVER w18 - split_num AS span_18k,
+        AVG(avg_heart_rate) OVER w18 AS hr_18k
     FROM full_splits
     WINDOW
         w2 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 1 FOLLOWING),
         w3 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 2 FOLLOWING),
         w5 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 4 FOLLOWING),
         w10 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 9 FOLLOWING),
-        w16 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 15 FOLLOWING)
+        w16 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 15 FOLLOWING),
+        w18 AS (PARTITION BY strava_id ORDER BY split_num ROWS BETWEEN CURRENT ROW AND 17 FOLLOWING)
 ),
 
-all_benchmarks AS (
-    SELECT 1 AS sort_order, '1 km' AS distance_label, 1.0 AS distance_km, dur_1k AS duration_sec, avg_heart_rate, split_date, activity_name, shoe_name, strava_id
+sprint_benchmarks AS (
+    SELECT 
+        sort_order,
+        distance_label,
+        distance_km,
+        duration_sec,
+        avg_heart_rate,
+        date_achieved AS split_date,
+        activity_name,
+        shoe_name,
+        strava_id
+    FROM `{{ target.project }}.strava_data.personal_sprint_efforts`
+),
+
+split_benchmarks AS (
+    -- 1 km
+    SELECT 5 AS sort_order, '1 km' AS distance_label, 1.0 AS distance_km, dur_1k AS duration_sec, avg_heart_rate, split_date, activity_name, shoe_name, strava_id
     FROM windows
     
     UNION ALL
-    SELECT 2, '2 km', 2.0, dur_2k, hr_2k, split_date, activity_name, shoe_name, strava_id
+    -- 2 km
+    SELECT 7, '2 km', 2.0, dur_2k, hr_2k, split_date, activity_name, shoe_name, strava_id
     FROM windows WHERE cnt_2k = 2 AND span_2k = 1
     
     UNION ALL
-    SELECT 3, '3 km', 3.0, dur_3k, hr_3k, split_date, activity_name, shoe_name, strava_id
+    -- 3 km
+    SELECT 8, '3 km', 3.0, dur_3k, hr_3k, split_date, activity_name, shoe_name, strava_id
     FROM windows WHERE cnt_3k = 3 AND span_3k = 2
     
     UNION ALL
-    SELECT 4, '5 km', 5.0, dur_5k, hr_5k, split_date, activity_name, shoe_name, strava_id
+    -- 5 km
+    SELECT 9, '5 km', 5.0, dur_5k, hr_5k, split_date, activity_name, shoe_name, strava_id
     FROM windows WHERE cnt_5k = 5 AND span_5k = 4
     
     UNION ALL
-    SELECT 5, '10 km', 10.0, dur_10k, hr_10k, split_date, activity_name, shoe_name, strava_id
+    -- 10 km
+    SELECT 10, '10 km', 10.0, dur_10k, hr_10k, split_date, activity_name, shoe_name, strava_id
     FROM windows WHERE cnt_10k = 10 AND span_10k = 9
     
     UNION ALL
-    SELECT 6, '16 km', 16.0, dur_16k, hr_16k, split_date, activity_name, shoe_name, strava_id
+    -- 16 km
+    SELECT 11, '16 km', 16.0, dur_16k, hr_16k, split_date, activity_name, shoe_name, strava_id
     FROM windows WHERE cnt_16k = 16 AND span_16k = 15
-    
+
     UNION ALL
-    -- 21 km (Half Marathon distance from full activities)
+    -- 18 km
+    SELECT 12, '18 km', 18.0, dur_18k, hr_18k, split_date, activity_name, shoe_name, strava_id
+    FROM windows WHERE cnt_18k = 18 AND span_18k = 17
+),
+
+endurance_activities AS (
+    -- 21 km (Half Marathon)
     SELECT 
-        7, 
-        '21 km (Half Marathon)', 
+        13 AS sort_order, 
+        '21 km (Half Marathon)' AS distance_label, 
+        ROUND(distance_km, 2) AS distance_km, 
+        CAST(ROUND(duration_min * 60) AS INT64) AS duration_sec, 
+        avg_heart_rate, 
+        activity_date AS split_date, 
+        activity_name, 
+        shoe_name, 
+        strava_id
+    FROM {{ ref('fct_activities') }}
+    WHERE activity_type = 'Run' AND distance_km >= 20.0 AND distance_km < 24.5
+
+    UNION ALL
+    -- 25 km (Future-proofed)
+    SELECT 
+        14, 
+        '25 km', 
         ROUND(distance_km, 2), 
         CAST(ROUND(duration_min * 60) AS INT64), 
         avg_heart_rate, 
@@ -100,7 +148,60 @@ all_benchmarks AS (
         shoe_name, 
         strava_id
     FROM {{ ref('fct_activities') }}
-    WHERE activity_type = 'Run' AND distance_km >= 20.0
+    WHERE activity_type = 'Run' AND distance_km >= 24.5 AND distance_km < 29.5
+
+    UNION ALL
+    -- 30 km (Future-proofed)
+    SELECT 
+        15, 
+        '30 km', 
+        ROUND(distance_km, 2), 
+        CAST(ROUND(duration_min * 60) AS INT64), 
+        avg_heart_rate, 
+        activity_date, 
+        activity_name, 
+        shoe_name, 
+        strava_id
+    FROM {{ ref('fct_activities') }}
+    WHERE activity_type = 'Run' AND distance_km >= 29.5 AND distance_km < 34.5
+
+    UNION ALL
+    -- 35 km (Future-proofed)
+    SELECT 
+        16, 
+        '35 km', 
+        ROUND(distance_km, 2), 
+        CAST(ROUND(duration_min * 60) AS INT64), 
+        avg_heart_rate, 
+        activity_date, 
+        activity_name, 
+        shoe_name, 
+        strava_id
+    FROM {{ ref('fct_activities') }}
+    WHERE activity_type = 'Run' AND distance_km >= 34.5 AND distance_km < 41.5
+
+    UNION ALL
+    -- 42 km (Marathon) (Future-proofed)
+    SELECT 
+        17, 
+        '42 km (Marathon)', 
+        ROUND(distance_km, 2), 
+        CAST(ROUND(duration_min * 60) AS INT64), 
+        avg_heart_rate, 
+        activity_date, 
+        activity_name, 
+        shoe_name, 
+        strava_id
+    FROM {{ ref('fct_activities') }}
+    WHERE activity_type = 'Run' AND distance_km >= 41.5
+),
+
+all_benchmarks AS (
+    SELECT * FROM sprint_benchmarks
+    UNION ALL
+    SELECT * FROM split_benchmarks
+    UNION ALL
+    SELECT * FROM endurance_activities
 ),
 
 ranked_pbs AS (
