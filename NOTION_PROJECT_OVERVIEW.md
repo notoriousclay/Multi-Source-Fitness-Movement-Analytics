@@ -17,19 +17,21 @@ This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Pl
 2. **dbt Medallion Lakehouse Architecture**:
    - **Bronze (Staging)**: Cleans, types, deduplicates, and standardizes raw activities, kilometer splits, Google Fit daily step counts, and athlete debrief messages.
    - **Silver (Intermediate)**: Calculates sports-science metrics including sliding-window **Acute:Chronic Workload Ratios (ACWR)**, equipment wear/depreciation curves, and active-vs-incidental step reconciliation.
-   - **Gold (Production Marts)**: Delivers dimensional marts (`fct_activities`, `fct_activity_splits`, `fct_daily_health_summary`, `fct_race_predictions`, `dim_shoes`, and `fct_athlete_training_journal`) validated by **47+ automated data quality tests**.
-3. **In-Warehouse Machine Learning & Predictive Modeling**:
+   - **Gold (Production Marts)**: Delivers dimensional marts (`fct_activities`, `fct_activity_splits`, `fct_daily_health_summary`, `fct_race_predictions`, `fct_personal_bests`, `dim_shoes`, and `fct_athlete_training_journal`) validated by **44+ automated data quality tests**.
+3. **Continuous All-Time Personal Bests (100m to 42km Marathon)**:
+   - High-resolution sliding-window window functions and sub-second stream analytics compute all-time personal bests across **13 standard athletic distances** (`100m`, `200m`, `400m`, `800m`, `1km`, `1 mile`, `2km`, `3km`, `5km`, `10km`, `16km`, `18km`, and `21km Half Marathon`), complete with automatic future-proofing for `25km`, `30km`, `35km`, and `42km Marathon`.
+4. **In-Warehouse Machine Learning & Predictive Modeling**:
    - **Riegel's Endurance Race Formula**: Computes dynamic target times and required splits for 5K, 10K, Half-Marathon, and Marathon based on rolling peak athletic performances.
    - **BigQuery ML `ARIMA_PLUS`**: Evaluates longitudinal volume trends, automated weekly seasonality, and anomaly detection.
    - **In-Warehouse Gemini LLM (`ML.GENERATE_TEXT`)**: Pre-computes microcycle, mesocycle, and macrocycle coaching narratives natively inside SQL.
-4. **Autonomous Telegram AI Coach (Human-in-the-Loop Webhook)**:
+5. **Autonomous Telegram AI Coach (Human-in-the-Loop Webhook)**:
    - Serverless Cloud Functions Gen 2 HTTP webhook receiving athlete voice notes, treadmill console photos, and text feedback in real-time.
    - Multimodal Gemini 2.0 Flash extracts quantitative metrics from treadmill console images and transcribes voice debriefs into structured feedback (RPE 1–10, soreness locations).
    - Dual-tier GenAI resilience: direct Google Gemini API failover to BigQuery ML's native `gemini_remote_model`.
-5. **Triple-Scheduled Serverless Orchestration**:
+6. **Triple-Scheduled Serverless Orchestration**:
    - Google Cloud Scheduler executes data ingestion every 8 hours (`0 */8 * * *`).
    - GitHub Actions CI/CD automatically triggers `dbt build` 30 minutes later (`30 0,8,16 * * *`), keeping all analytical marts up to date with zero manual intervention.
-6. **Executive Business Intelligence**: Visualizes acute-to-chronic injury danger zones, training intensity distributions, footwear lifespan, and the interactive **Athlete Training Journal** in Google Looker Studio.
+7. **Executive Business Intelligence**: Visualizes acute-to-chronic injury danger zones, training intensity distributions, footwear lifespan, all-time personal bests, and the interactive **Athlete Training Journal** in Google Looker Studio.
 
 ---
 
@@ -62,6 +64,7 @@ This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Pl
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ • strava_data.strava_activities          • strava_data.strava_activity_splits          │
 │ • strava_data.google_fit_daily_steps     • strava_data.athlete_feedback                │
+│ • strava_data.personal_sprint_efforts (100m, 200m, 400m, 800m sub-km sprint streams)   │
 └─────────────────────────────────────────┬──────────────────────────────────────────────┘
                                           │
                                           ▼ (Scheduled dbt Build every 8 hours)
@@ -81,11 +84,12 @@ This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Pl
 │    • fct_activities (Partitioned by Date, Clustered by Type/Shoe)                      │
 │    • fct_activity_splits (Granular per-kilometer splits)                               │
 │    • fct_daily_health_summary (Longitudinal ACWR injury risk & total steps)            │
+│    • fct_personal_bests (All-time PRs across 13 athletic distances)                    │
 │    • fct_race_predictions (Riegel's 5K, 10K, HM, Marathon times)                       │
 │    • dim_shoes (Equipment lifespan & retirement status)                                │
 │    • fct_athlete_training_journal (Strava runs + Athlete feedback + AI feedback)       │
 │                                                                                        │
-│ 🛡️ 47+ Automated dbt Schema & Data Quality Tests Passing in CI/CD                     │
+│ 🛡️ 44+ Automated dbt Schema & Data Quality Tests Passing in CI/CD                     │
 └─────────────────────────────────────────┬──────────────────────────────────────────────┘
                                           │
                  ┌────────────────────────┴────────────────────────┐
@@ -97,10 +101,31 @@ This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Pl
 │ • Monthly Mileage & Sessions Dual-Axis Chart  │ │ • Inbound Voice Note RPE Extraction  │
 │ • ACWR Injury Hazard Zone Gauge               │ │ • Treadmill Screen Multimodal OCR    │
 │ • Shoe Wear & Depreciation Donut Chart        │ │ • Slash Commands: /readiness, /race  │
-│ • Tri-Level Synchronized AI Coaching Summaries│ │ • Dual-Tier Gemini ML Failover Engine│
-│ • Human-in-the-Loop Athlete Training Journal  │ └──────────────────────────────────────┘
+│ • 🏆 All-Time Personal Bests (100m to 21km)   │ │ • Dual-Tier Gemini ML Failover Engine│
+│ • Tri-Level Synchronized AI Coaching Summaries│ └──────────────────────────────────────┘
+│ • Human-in-the-Loop Athlete Training Journal  │                                        
 └───────────────────────────────────────────────┘
 ```
+
+---
+
+## 🏆 Current All-Time Personal Bests (Materialized in Production)
+
+| # | Distance Benchmark | Distance (km) | Best Time | Best Pace | Avg Heart Rate | Date Achieved | Workout Name | Shoe Used |
+| :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- |
+| **1** | **100 meters** | 0.10 | `00:00:14` | **02:20/km** | 168.0 bpm | 2026-11-20 | Afternoon Run | Qiaodan Leili 2.0 GT |
+| **2** | **200 meters** | 0.20 | `00:00:46` | **03:50/km** | 170.0 bpm | 2026-11-20 | Afternoon Run | Qiaodan Leili 2.0 GT |
+| **3** | **400 meters** | 0.40 | `00:01:43` | **04:18/km** | 172.0 bpm | 2026-11-12 | Afternoon Run | Dynafish Xiaonian |
+| **4** | **800 meters** | 0.80 | `00:03:48` | **04:45/km** | 174.0 bpm | 2026-11-11 | Tempo Run | 361 Mega 3 Pro |
+| **5** | **1 km** | 1.00 | `00:04:22` | **04:22/km** | 172.4 bpm | 2026-11-24 | Afternoon Run | Qiaodan Leili 2.0 GT |
+| **6** | **1 mile (1.61 km)**| 1.61 | `00:08:15` | **05:08/km** | 175.0 bpm | 2026-11-11 | Tempo Run | 361 Mega 3 Pro |
+| **7** | **2 km** | 2.00 | `00:10:29` | **05:15/km** | 165.6 bpm | 2026-11-11 | Tempo Run | 361 Mega 3 Pro |
+| **8** | **3 km** | 3.00 | `00:16:05` | **05:22/km** | 178.8 bpm | 2026-09-20 | Afternoon Run | Dynafish Xiaonian |
+| **9** | **5 km** | 5.00 | `00:27:20` | **05:28/km** | 179.0 bpm | 2026-09-20 | Afternoon Run | Dynafish Xiaonian |
+| **10** | **10 km** | 10.00 | `01:02:32` | **06:15/km** | 174.6 bpm | 2026-11-20 | Afternoon Run | Qiaodan Leili 2.0 GT |
+| **11** | **16 km** | 16.00 | `01:47:50` | **06:44/km** | 174.6 bpm | 2026-07-26 | MNL City Run: Aqua Run 16KM | Li-ning Feidian 6 Elite |
+| **12** | **18 km** | 18.00 | `02:05:58` | **06:00/km** | 172.4 bpm | 2026-10-04 | Project Half Mary v1.0 | Li-ning Feidian 6 Elite |
+| **13** | **21 km (Half Marathon)** | 20.86 | `02:27:18` | **07:04/km** | 171.8 bpm | 2026-10-04 | Project Half Mary v1.0 | Li-ning Feidian 6 Elite |
 
 ---
 
@@ -112,42 +137,10 @@ stg_strava__activities     ───>    int_running_workload_acwr        ──
 stg_strava__splits         ───>    int_shoe_mileage_metrics         ───>    fct_activity_splits
 stg_google_fit__steps      ───>    int_step_reconciliation          ───>    fct_daily_health_summary
 stg_athlete_feedback       ─────────────────────────────────────────>    fct_race_predictions
+personal_sprint_efforts    ─────────────────────────────────────────>    fct_personal_bests
                                                                             dim_shoes
                                                                             fct_athlete_training_journal
 ```
-
-### Bronze / Staging Models (`strava_dbt_staging`)
-- **`stg_strava__activities`**: Deduplicates records using `ROW_NUMBER() OVER (PARTITION BY Strava_ID ORDER BY Ingestion_Timestamp DESC)`, casts timestamps, converts distance from meters to kilometers, formats moving pace (`MM:SS/km`), and standardizes gear IDs.
-- **`stg_strava__activity_splits`**: Normalizes kilometer split intervals, calculates split elevation variance, and formats per-kilometer pace.
-- **`stg_google_fit__daily_steps`**: Cleans passive daily step counts, dates, and active durations.
-- **`stg_strava__athlete_feedback`**: Cleans qualitative feedback, normalizes RPE integers (1–10), soreness anatomical locations, and AI coach response logs.
-
-### Silver / Intermediate Models (`strava_dbt_intermediate`)
-- **`int_running_workload_acwr`**:
-  Calculates the **Acute-to-Chronic Workload Ratio (ACWR)** using sliding window analytic functions over a generated continuous daily calendar:
-  - **Acute Workload (7-Day Rolling Volume)**: Represents current physical fatigue.
-  - **Chronic Workload (28-Day Rolling Average Weekly Volume)**: Represents athletic aerobic baseline fitness:
-    $$\text{Chronic Workload} = \frac{\sum_{i=0}^{27} \text{Distance}_{d-i}}{4}$$
-  - **ACWR Formula**:
-    $$\text{ACWR} = \frac{\text{Acute Workload (7-Day km)}}{\text{Chronic Workload (28-Day Weekly km)}}$$
-  - **Risk Categorization**:
-    - $\text{ACWR} < 0.80$: Under-training / High Recovery
-    - $0.80 \le \text{ACWR} \le 1.30$: Optimal "Sweet Spot" (Progressive Overload)
-    - $1.31 \le \text{ACWR} \le 1.49$: Elevated Risk (Monitor Fatigue)
-    - $\text{ACWR} \ge 1.50$: Critical Injury Hazard (Spiked Volume Danger)
-- **`int_shoe_mileage_metrics`**: Aggregates running shoe depreciation, total lifetime kilometers, total sessions logged, and percentage of safe lifespan completed (assuming 650 km retirement benchmark).
-- **`int_daily_activity_step_reconciliation`**: Reconciles dedicated Strava workout steps against total Google Fit daily steps to derive passive non-workout steps and total daily physical strain:
-  $$\text{Incidental Steps} = \max(0, \text{Total Fit Steps} - \text{Strava Workout Steps})$$
-
-### Gold / Production Marts (`strava_dbt_marts`)
-- **`fct_activities`**: Partitioned by `activity_date` and clustered by `activity_type` and `shoe_name`. Enriched with ACWR values at the time of each run.
-- **`fct_activity_splits`**: Granular kilometer breakdown for pacing consistency analysis (negative splits, fade detection).
-- **`fct_daily_health_summary`**: Master daily table combining acute/chronic workload, ACWR hazard category, total daily steps, and workout counts.
-- **`fct_race_predictions`**: Employs **Riegel's Endurance Formula** against the athlete's peak 5K/10K baseline to forecast race performance:
-  $$T_2 = T_1 \times \left(\frac{D_2}{D_1}\right)^{1.06}$$
-  Projects target times and required pacing for 5K, 10K, Half Marathon, and Full Marathon.
-- **`dim_shoes`**: Equipment dimension table indicating mileage status (`Optimal`, `Moderate Wear`, `Retire Soon`, `Retired`).
-- **`fct_athlete_training_journal`**: High-value human-in-the-loop mart joining Strava physical metrics (`fct_activities`) with Telegram qualitative feedback (`stg_strava__athlete_feedback`) on `strava_id` and date proximity. Displays workout stats alongside RPE, soreness, athlete voice transcripts, and AI coach recommendations.
 
 ---
 
@@ -190,16 +183,6 @@ stg_athlete_feedback       ─────────────────�
                  └──────────────────────────────────┘
 ```
 
-### Slash Commands
-- `/start`: Displays welcome briefing, system capabilities, and command syntax.
-- `/readiness`: Returns current 7-day acute volume, 28-day chronic baseline, ACWR ratio, and injury risk category directly from `fct_daily_health_summary`.
-- `/race`: Returns current Riegel projected 5K, 10K, Half Marathon, and Marathon times from `fct_race_predictions`.
-
-### Dual-Tier LLM Resilience Engine
-To safeguard against API quota depletion or prepayment balance interruptions (HTTP 402 / 429), the bot implements **automatic runtime failover**:
-- **Primary**: Direct Google Gemini API (`gemini-2.0-flash`).
-- **Secondary (Zero-Downtime Fallback)**: Automatically falls back to BigQuery ML's parameterized SQL query executing `ML.GENERATE_TEXT` against `strava_data.gemini_remote_model`.
-
 ---
 
 ## ☁️ Zero-Cost Serverless Cloud Orchestration
@@ -215,7 +198,7 @@ To safeguard against API quota depletion or prepayment balance interruptions (HT
 
 ## 🏆 Key Portfolio Competencies Demonstrated
 
-- **Production-Grade Analytics Engineering**: Complete implementation of dbt Core with 47+ automated schema/range tests, version control, and CI/CD automation.
-- **Advanced Athletic Biomechanics**: Real-world application of ACWR (Acute:Chronic Workload Ratio) for sports science injury prevention and Riegel endurance race modeling.
+- **Production-Grade Analytics Engineering**: Complete implementation of dbt Core with 44+ automated schema/range tests, version control, and CI/CD automation.
+- **Advanced Athletic Biomechanics & Stream Telemetry**: Real-world application of ACWR (Acute:Chronic Workload Ratio) for sports science injury prevention, high-resolution stream sprint extraction, and Riegel endurance race modeling.
 - **Conversational Human-in-the-Loop Data Engineering**: Bridges the gap between hard telemetry (GPS/HR) and subjective athlete feedback (RPE/soreness) using serverless webhooks and NLP.
 - **Cost-Optimized Architecture**: Enterprise-grade cloud data platform operating at **$0.00/month** total infrastructure cost.

@@ -24,19 +24,21 @@ This project delivers an **end-to-end, enterprise-grade Data & AI Engineering Pl
 2. **dbt Medallion Lakehouse Architecture**:
    - **Bronze (Staging)**: Cleans, types, deduplicates, and standardizes raw activities, kilometer splits, Google Fit daily step counts, and athlete debrief messages.
    - **Silver (Intermediate)**: Calculates sports-science metrics including sliding-window **Acute:Chronic Workload Ratios (ACWR)**, equipment wear/depreciation curves, and active-vs-incidental step reconciliation.
-   - **Gold (Production Marts)**: Delivers dimensional marts (`fct_activities`, `fct_activity_splits`, `fct_daily_health_summary`, `fct_race_predictions`, `dim_shoes`, and `fct_athlete_training_journal`) validated by **47+ automated data quality tests**.
-3. **In-Warehouse Machine Learning & Predictive Modeling**:
+   - **Gold (Production Marts)**: Delivers dimensional marts (`fct_activities`, `fct_activity_splits`, `fct_daily_health_summary`, `fct_race_predictions`, `fct_personal_bests`, `dim_shoes`, and `fct_athlete_training_journal`) validated by **44+ automated data quality tests**.
+3. **Continuous All-Time Personal Bests (100m to 42km Marathon)**:
+   - High-resolution sliding-window window functions and sub-second stream analytics compute all-time personal bests across **13 standard athletic distances** (`100m`, `200m`, `400m`, `800m`, `1km`, `1 mile`, `2km`, `3km`, `5km`, `10km`, `16km`, `18km`, and `21km Half Marathon`), complete with automatic future-proofing for `25km`, `30km`, `35km`, and `42km Marathon`.
+4. **In-Warehouse Machine Learning & Predictive Modeling**:
    - **Riegel's Endurance Race Formula**: Computes dynamic target times and required splits for 5K, 10K, Half-Marathon, and Marathon based on rolling peak athletic performances.
    - **BigQuery ML `ARIMA_PLUS`**: Evaluates longitudinal volume trends, automated weekly seasonality, and anomaly detection.
    - **In-Warehouse Gemini LLM (`ML.GENERATE_TEXT`)**: Pre-computes microcycle, mesocycle, and macrocycle coaching narratives natively inside SQL.
-4. **Autonomous Telegram AI Coach (Human-in-the-Loop Webhook)**:
+5. **Autonomous Telegram AI Coach (Human-in-the-Loop Webhook)**:
    - Serverless Cloud Functions Gen 2 HTTP webhook receiving athlete voice notes, treadmill console photos, and text feedback in real-time.
    - Multimodal Gemini 2.0 Flash extracts quantitative metrics from treadmill console images and transcribes voice debriefs into structured feedback (RPE 1–10, soreness locations).
    - Dual-tier GenAI resilience: direct Google Gemini API failover to BigQuery ML's native `gemini_remote_model`.
-5. **Triple-Scheduled Serverless Orchestration**:
+6. **Triple-Scheduled Serverless Orchestration**:
    - Google Cloud Scheduler executes data ingestion every 8 hours (`0 */8 * * *`).
    - GitHub Actions CI/CD automatically triggers `dbt build` 30 minutes later (`30 0,8,16 * * *`), keeping all analytical marts up to date with zero manual intervention.
-6. **Executive Business Intelligence**: Visualizes acute-to-chronic injury danger zones, training intensity distributions, footwear lifespan, and the interactive **Athlete Training Journal** in Google Looker Studio.
+7. **Executive Business Intelligence**: Visualizes acute-to-chronic injury danger zones, training intensity distributions, footwear lifespan, all-time personal bests, and the interactive **Athlete Training Journal** in Google Looker Studio.
 
 ---
 
@@ -62,6 +64,7 @@ flowchart TD
         GCF1 -->|Kilometer Split Ingestion| BQ_SPLITS[("strava_activity_splits<br/>Pace & Elevation Splits")]
         GCF1 -->|Daily Health Sync| BQ_STEPS[("google_fit_daily_steps<br/>Passive Ambient Steps")]
         GCF2 -->|Real-Time Feedback Ingestion| BQ_FB[("athlete_feedback<br/>RPE, Soreness, Qualitative Notes")]
+        BQ_SPRINT[("personal_sprint_efforts<br/>Sub-Km Sprints: 100m, 200m, 400m, 800m")]
     end
 
     subgraph DBT_PIPELINE ["4. Analytics Engineering Layer (dbt Core)"]
@@ -83,6 +86,7 @@ flowchart TD
             fct_splits[("fct_activity_splits<br/>Per-Kilometer Granular Splits")]
             fct_health[("fct_daily_health_summary<br/>Longitudinal Health & ACWR Risk")]
             fct_race[("fct_race_predictions<br/>Riegel's 5K, 10K, HM, Marathon Times")]
+            fct_pb[("fct_personal_bests<br/>All-Time PRs: 100m up to 42km Marathon")]
             dim_shoes[("dim_shoes<br/>Shoe Retirement Status")]
             fct_journal[("fct_athlete_training_journal<br/>Strava + Feedback + AI Coach Notes")]
         end
@@ -100,6 +104,7 @@ flowchart TD
         stg_splits --> fct_splits
         int_acwr & int_recon --> fct_health
         stg_act --> fct_race
+        fct_splits & BQ_SPRINT & fct_act --> fct_pb
         int_shoes --> dim_shoes
         fct_act & stg_fb --> fct_journal
     end
@@ -109,7 +114,7 @@ flowchart TD
         GHA2["GitHub Actions: deploy_telegram_webhook.yml<br/>(Webhook Cloud Function CD)"]
         GHA3["GitHub Actions: dbt_ci.yml<br/>(Cron: 30 0,8,16 * * * & PR CI)"]
         
-        GHA3 -->|Runs dbt build & 47+ Schema Tests| DBT_PIPELINE
+        GHA3 -->|Runs dbt build & 44+ Schema Tests| DBT_PIPELINE
     end
 
     subgraph AI_PREDICTIVE ["6. Autonomous AI & In-Warehouse Intelligence"]
@@ -122,7 +127,7 @@ flowchart TD
     end
 
     subgraph PRESENTATION ["7. Business Intelligence & Athlete Interface"]
-        fct_act & fct_health & fct_race & dim_shoes & fct_journal --> LOOKER["Google Looker Studio Executive Dashboard<br/>(Interactive Visual Analytics & Training Journal)"]
+        fct_act & fct_health & fct_race & fct_pb & dim_shoes & fct_journal --> LOOKER["Google Looker Studio Executive Dashboard<br/>(Interactive Visual Analytics & Training Journal)"]
         fct_health & fct_race -->|Bot Commands: /readiness, /race| TG
     end
 
@@ -141,8 +146,9 @@ flowchart TD
 
 ### 1. Analytics Engineering with dbt Core
 - **Medallion Architecture**: Strict isolation between Bronze Staging (`strava_dbt_staging`), Silver Intermediate (`strava_dbt_intermediate`), and Gold Production Marts (`strava_dbt_marts`).
-- **Data Quality Assertions**: **47+ automated dbt tests** (uniqueness, not_null, accepted_values, relationships) passing in CI/CD.
+- **Data Quality Assertions**: **44+ automated dbt tests** (uniqueness, not_null, accepted_values, relationships) passing in CI/CD.
 - **Biomechanical Modeling**: Continuous calculation of Acute:Chronic Workload Ratios (ACWR), footwear wear curves, and daily step cross-reconciliation.
+- **All-Time Personal Bests (`fct_personal_bests`)**: Automated benchmark detection across 13 distances from `100m` to `21km Half Marathon` (future-proofed to `42km Marathon`).
 
 ### 2. Autonomous Telegram AI Coach & Inbound Webhook
 - **Serverless Cloud Function Gen 2** (`strava-ai-coach-webhook`) handling real-time athlete voice notes, text reflections, and treadmill photos.
